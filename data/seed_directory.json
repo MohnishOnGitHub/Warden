@@ -1,0 +1,55 @@
+{
+  "users": [
+    {"user_id": "priya.s", "name": "Priya S", "department": "Engineering", "role": "employee", "manager_id": null, "locked": 1},
+    {"user_id": "arjun.m", "name": "Arjun M", "department": "Finance", "role": "employee", "manager_id": "anita.d", "locked": 0},
+    {"user_id": "rahul.k", "name": "Rahul K", "department": "Sales", "role": "employee", "manager_id": null, "locked": 0},
+    {"user_id": "anita.d", "name": "Anita D", "department": "Finance", "role": "manager", "manager_id": "vikram.r", "locked": 0},
+    {"user_id": "vikram.r", "name": "Vikram R", "department": "Finance", "role": "executive", "manager_id": null, "locked": 0},
+    {"user_id": "neha.i", "name": "Neha I", "department": "IT", "role": "it_staff", "manager_id": null, "locked": 0},
+    {"user_id": "sam.t", "name": "Sam T", "department": "IT", "role": "it_admin", "manager_id": null, "locked": 0}
+  ],
+  "groups": [
+    {"group_name": "FinanceReports", "owner_id": "anita.d", "privileged": 0},
+    {"group_name": "EngineeringWiki", "owner_id": "sam.t", "privileged": 0},
+    {"group_name": "VPNUsers", "owner_id": "sam.t", "privileged": 0},
+    {"group_name": "DomainAdmins", "owner_id": "sam.t", "privileged": 1},
+    {"group_name": "GlobalAdmins", "owner_id": "sam.t", "privileged": 1},
+    {"group_name": "SecurityAdmins", "owner_id": "sam.t", "privileged": 1}
+  ],
+  "group_members": [
+    {"group_name": "FinanceReports", "user_id": "anita.d"},
+    {"group_name": "FinanceReports", "user_id": "arjun.m"},
+    {"group_name": "FinanceReports", "user_id": "vikram.r"},
+    {"group_name": "EngineeringWiki", "user_id": "priya.s"},
+    {"group_name": "VPNUsers", "user_id": "priya.s"},
+    {"group_name": "VPNUsers", "user_id": "arjun.m"},
+    {"group_name": "DomainAdmins", "user_id": "sam.t"},
+    {"group_name": "GlobalAdmins", "user_id": "sam.t"},
+    {"group_name": "SecurityAdmins", "user_id": "sam.t"}
+  ],
+  "devices": [
+    {"device_id": "LT1042", "owner_id": "priya.s"},
+    {"device_id": "LT2077", "owner_id": "arjun.m"},
+    {"device_id": "LT3301", "owner_id": "rahul.k"}
+  ],
+  "software_catalogue": [
+    {"package": "vscode", "status": "approved"},
+    {"package": "slack", "status": "approved"},
+    {"package": "zoom", "status": "approved"},
+    {"package": "chrome", "status": "approved"},
+    {"package": "python3", "status": "approved"},
+    {"package": "git", "status": "approved"},
+    {"package": "docker_desktop", "status": "needs_approval"},
+    {"package": "tableau", "status": "needs_approval"},
+    {"package": "anydesk", "status": "denied"},
+    {"package": "teamviewer", "status": "denied"},
+    {"package": "utorrent", "status": "denied"},
+    {"package": "mimikatz", "status": "denied"}
+  ],
+  "services": [
+    {"host": "prn03", "service_name": "spooler", "environment": "nonprod", "restartable": 1},
+    {"host": "dev01", "service_name": "nginx", "environment": "nonprod", "restartable": 1},
+    {"host": "app01", "service_name": "payments_api", "environment": "prod", "restartable": 1},
+    {"host": "dc01", "service_name": "ntds", "environment": "prod", "restartable": 0}
+  ]
+}
