@@ -25,7 +25,7 @@ def test_allow_executes_and_records(conn):
     a = action(conn, d.action_id)
     assert (a["status"], a["policy_verdict"], a["final_verdict"], a["warden_mode"]) == ("EXECUTED", "ALLOW", "ALLOW", "on")
     assert a["policy_rule_ids"] == "P020" and a["latency_ms"] is not None
-    assert audit_types(conn) == ["action_proposed", "policy_decision", "action_executed"]
+    assert audit_types(conn) == ["action_proposed", "policy_decision", "judge_decision", "action_executed"]
 
 
 def test_block_does_not_execute_and_agent_sees_reason_not_rule_id(conn):
@@ -38,7 +38,7 @@ def test_block_does_not_execute_and_agent_sees_reason_not_rule_id(conn):
     assert seen == {"status": "blocked", "reason": "Privileged groups cannot be granted by the service desk."}
     assert not re.search(r"P\d{3}", json.dumps(seen))
     assert action(conn, d.action_id)["status"] == "BLOCKED"
-    assert audit_types(conn)[-1] == "action_blocked"
+    assert audit_types(conn)[-2:] == ["action_blocked", "security_flag_set"]
 
 
 def test_require_approval_queues_and_does_not_execute(conn):

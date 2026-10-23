@@ -16,17 +16,18 @@ The threat: ticket text is written by anyone, so attackers hide instructions in 
 1. Nothing executes without a verdict. The only path to a tool function is `warden.handle()` returning ALLOW, or an approved approval record.
 2. Ticket subject and body are untrusted data. They only ever appear inside an `<untrusted_ticket>` block. Never in system prompts, never as policy inputs.
 3. Requester identity and role come from the `users` table, never from ticket text.
-4. Fail closed: any exception, timeout, invalid judge output or missing rule inside Warden means BLOCK.
+4. Fail closed: any exception or missing rule inside Warden means BLOCK. Invalid judge output means BLOCK. An unavailable judge (timeout, 429, 503, LLM error) means REQUIRE_APPROVAL by `fallback_approver`, never execution.
 5. Most restrictive verdict wins: BLOCK > REQUIRE_APPROVAL > ALLOW.
 6. Temporary passwords are never returned to the agent, logged, or shown on the dashboard.
 7. `audit_log` is append only. No UPDATE or DELETE on it anywhere.
+8. Warden owns `tickets.security_flag`. It is set to 1 whenever any action on the ticket is BLOCKED (policy, judge or fail closed), and nothing the agent says can clear it.
 
 ## Stack
 
 * Python 3.13, FastAPI + Uvicorn, Pydantic v2, SQLite (stdlib sqlite3), PyYAML, Streamlit.
 * LLM: Google Gemini via the official `google-genai` SDK. API key in `.env` as `GEMINI_API_KEY`, loaded with python-dotenv.
 * Model names come from env vars `AGENT_MODEL` and `JUDGE_MODEL` (use the current Flash model). Never hardcode them.
-* Temperature 0 for both agent and judge. Judge timeout 6 seconds.
+* Temperature 0 for both agent and judge. Judge time budget 10 seconds in total (retries and `FALLBACK_MODEL` included, `judge_timeout_seconds` in `config/settings.yaml`). The Gemini API rejects request deadlines under 10 seconds, so `llm.py` sets the server deadline header itself.
 * Free tier rate limits are low: wrap LLM calls with retry and backoff, and add a small delay in batch scripts.
 
 ## Folder layout
@@ -84,15 +85,15 @@ Match every rule whose conditions hold, take the most restrictive verdict, defau
 * grant_group_membership: privileged group BLOCK (P040); missing group BLOCK (P041); other user unless manager or IT BLOCK (P042); standard group REQUIRE_APPROVAL by group owner (P043).
 * restart_service: not restartable BLOCK (P050); prod REQUIRE_APPROVAL by sam.t (P051); nonprod restartable ALLOW (P052).
 * resolve_ticket / escalate_to_human: wrong ticket BLOCK (P060); unsafe message (too long, secret, external link) BLOCK (P061); otherwise ALLOW (P062).
-* Judge runs only for write and privileged tools whose policy verdict is not BLOCK.
+* Judge runs only for write and privileged tools whose policy verdict is not BLOCK. The communication tools (resolve_ticket, escalate_to_human) skip the judge.
 
 ## Judge
 
-Separate LLM call. Input: trusted requester facts, proposed action, policy result, scanner hints, and the ticket inside `<untrusted_ticket>`. Output strict JSON: verdict (ALLOW/REQUIRE_APPROVAL/BLOCK), risk_score 0 to 100, reason (short), indicators (from a fixed list). Extra fields or bad JSON means BLOCK. Score floors: risk 70+ forces BLOCK, 40 to 69 forces at least REQUIRE_APPROVAL. The judge can only make a verdict stricter, never relax a policy result.
+Separate LLM call. Input: trusted requester facts, proposed action, policy result, scanner hints, and the ticket inside `<untrusted_ticket>`. Output strict JSON: verdict (ALLOW/REQUIRE_APPROVAL/BLOCK), risk_score 0 to 100, reason (short), indicators (from a fixed list). Extra fields, bad JSON or out of range values (invalid output) mean BLOCK. If the judge is unavailable (timeout, 429, 503, LLM error, after retries and the fallback model within the 10 second budget) the verdict is REQUIRE_APPROVAL by `fallback_approver` (sam.t, or the policy approver if policy already named one), with a `judge_unavailable` audit event, and nothing executes. Score floors: risk 70+ forces BLOCK, 40 to 69 forces at least REQUIRE_APPROVAL. The judge can only make a verdict stricter, never relax a policy result. The judge's reason is never shown to the agent, since it can echo ticket text.
 
 ## Agent loop
 
-Max 8 steps. One tool call at a time through warden.handle(). Agent sees only {executed + result}, {pending_approval} or {blocked + reason}, never rule IDs or risk scores. On pending approval the loop ends. After 2 blocks, force escalate with security flag. Ticket ends RESOLVED or ESCALATED with a resolution note.
+Max 8 steps. One tool call at a time through warden.handle(). Agent sees only {executed + result}, {pending_approval} or {blocked + reason}, never rule IDs or risk scores. On pending approval the loop ends. After 2 blocks, force escalate with security flag. For a policy block the agent sees the rule's reason text (never the rule ID); for a judge block it sees a generic line. Warden sets the security flag on any block, independent of what the agent passes to escalate_to_human. Ticket ends RESOLVED or ESCALATED with a resolution note.
 
 ## Approvals
 

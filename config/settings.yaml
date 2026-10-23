@@ -1,0 +1,12 @@
+# Warden settings. Loaded and validated by app/settings.py at import.
+
+# Judge risk score floors: at or above judge_block_score the action is BLOCKed,
+# at or above judge_approval_score it needs approval at the very least.
+judge_block_score: 70
+judge_approval_score: 40
+
+# Total time budget for one judge decision, retries and fallback model included.
+judge_timeout_seconds: 10
+
+# Approver used when the judge (or an unavailable judge) sends an ALLOWed action to approval.
+fallback_approver: sam.t

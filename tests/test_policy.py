@@ -329,3 +329,10 @@ def test_default_must_block(tmp_path, raw_policy):
 def test_missing_file_raises(tmp_path):
     with pytest.raises(PolicyConfigError):
         load_policy(tmp_path / "nope.yaml")
+
+
+def test_closing_tools_skip_the_judge(conn):
+    resolve = ev(conn, "resolve_ticket", {"ticket_id": "T1001", "message": "done"})
+    escalate = ev(conn, "escalate_to_human", {"ticket_id": "T1001", "summary": "x", "security_concern": True})
+    assert resolve.verdict == escalate.verdict == ALLOW
+    assert resolve.needs_judge is False and escalate.needs_judge is False

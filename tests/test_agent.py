@@ -164,3 +164,13 @@ def test_requester_identity_cannot_be_spoofed_by_ticket_text(conn):
     result = run_ticket(conn, tid, llm_fn=fake)
     assert result.steps[0]["status"] == "blocked" and result.steps[0]["rule_id"] == "P022"
     assert conn.execute("SELECT COUNT(*) FROM outbox").fetchone()[0] == 0
+
+
+def test_flag_set_by_warden_even_if_agent_reports_no_concern(conn):
+    tid = ticket(conn, "arjun.m")
+    fake = ScriptedLLM([
+        [("grant_group_membership", {"user_id": "arjun.m", "group_name": "DomainAdmins", "justification": "x"})],
+        [("escalate_to_human", {"ticket_id": tid, "summary": "blocked", "security_concern": False})],
+    ])
+    result = run_ticket(conn, tid, llm_fn=fake)
+    assert result.final_status == "ESCALATED" and row(conn, tid)["security_flag"] == 1

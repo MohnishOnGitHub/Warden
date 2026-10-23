@@ -1,7 +1,8 @@
 """Warden: the guardian layer between the agent and the tools.
 
 handle() is the only path from a proposed tool call to a tool function (invariant 1).
-Milestone 4 runs policy only. The judge and combiner join in milestone 5.
+Flow: validate, policy, judge (write tools that policy did not block), combine, then
+execute, queue for approval, or block.
 """
 import json
 import os
@@ -11,14 +12,19 @@ from dataclasses import replace
 from app.audit import log_event
 from app.models import ActionStatus, Decision
 from app.tools import execute_tool, redact
+from app.warden.combiner import combine
+from app.warden.judge import JudgeInvalid, JudgeUnavailable, judge_action
 from app.warden.policy import ALLOW, BLOCK, REQUIRE_APPROVAL, evaluate_policy
 
 BLOCKED_REASON = "This action is not permitted."
 FAILED_REASON = "The action could not be completed."
+# Judge reasons can echo ticket text, so the agent only ever gets this generic line.
+JUDGE_BLOCKED_REASON = "This action was flagged as risky and was not run."
 
 # Columns _set_action may write. Fixed list, so no SQL text ever comes from outside.
 ACTION_COLUMNS = {
     "policy_verdict", "policy_rule_ids", "policy_reason", "final_verdict", "status", "latency_ms",
+    "judge_verdict", "judge_risk_score", "judge_reason", "judge_indicators_json",
 }
 
 
@@ -44,6 +50,16 @@ def _set_action(conn, action_id, **cols):
         conn.execute(f"UPDATE actions SET {sets} WHERE action_id = ?", (*cols.values(), action_id))
 
 
+def _flag_ticket(conn, ticket_id):
+    """Warden owns the security flag: any blocked action raises it, whatever the agent says later."""
+    with conn:
+        changed = conn.execute(
+            "UPDATE tickets SET security_flag = 1, updated_at = datetime('now') "
+            "WHERE ticket_id = ? AND security_flag = 0", (ticket_id,)).rowcount
+    if changed:
+        log_event(conn, "security_flag_set", "warden", ticket_id, {"reason": "action blocked"})
+
+
 def _elapsed_ms(started):
     return int((time.perf_counter() - started) * 1000)
 
@@ -63,6 +79,30 @@ def _run_tool(conn, ticket_id, action_id, tool_name, args, obligations, started)
     return Decision("executed", tool_name, action_id, result=result, verdict=ALLOW)
 
 
+def _run_judge(conn, ticket_id, action_id, tool_name, args, policy):
+    """Ask the judge and record what happened. Returns (JudgeOutput or None, judge_state)."""
+    try:
+        out = judge_action(conn, ticket_id, tool_name, args, policy)
+    except JudgeUnavailable as e:
+        _set_action(conn, action_id, judge_reason="Judge unavailable")
+        log_event(conn, "judge_unavailable", "judge", ticket_id, {"action_id": action_id, "error": str(e)})
+        return None, "unavailable"
+    except JudgeInvalid as e:
+        _set_action(conn, action_id, judge_reason=f"Judge output invalid ({e.kind})")
+        log_event(conn, "judge_invalid", "judge", ticket_id, {"action_id": action_id, "kind": e.kind})
+        return None, "invalid"
+    _set_action(
+        conn, action_id,
+        judge_verdict=out.verdict, judge_risk_score=out.risk_score, judge_reason=out.reason,
+        judge_indicators_json=json.dumps(out.indicators),
+    )
+    log_event(conn, "judge_decision", "judge", ticket_id, {
+        "action_id": action_id, "verdict": out.verdict, "risk_score": out.risk_score,
+        "indicators": out.indicators, "reason": out.reason,
+    })
+    return out, "ok"
+
+
 def _handle(conn, ticket_id, requester_id, tool_name, raw_args, started):
     mode = warden_mode()
     args = coerce_args(raw_args)
@@ -76,46 +116,59 @@ def _handle(conn, ticket_id, requester_id, tool_name, raw_args, started):
               {"action_id": action_id, "tool": tool_name, "args": args, "warden_mode": mode})
 
     if mode == "off":
-        # Baseline for the Warden on/off comparison: no policy, everything runs.
+        # Baseline for the Warden on/off comparison: no policy, no judge, everything runs.
         _set_action(conn, action_id, final_verdict=ALLOW)
         return _run_tool(conn, ticket_id, action_id, tool_name, args, {}, started)
 
     policy = evaluate_policy(tool_name, args, requester_id, ticket_id, conn)
     _set_action(
         conn, action_id,
-        policy_verdict=policy.verdict, policy_rule_ids=",".join(policy.rule_ids),
-        policy_reason=policy.reason, final_verdict=policy.verdict,
+        policy_verdict=policy.verdict, policy_rule_ids=",".join(policy.rule_ids), policy_reason=policy.reason,
     )
     log_event(conn, "policy_decision", "warden", ticket_id, {
         "action_id": action_id, "verdict": policy.verdict, "rule_id": policy.rule_id,
         "rule_ids": list(policy.rule_ids), "reason": policy.reason, "approver_id": policy.approver_id,
     })
 
-    internal = dict(action_id=action_id, verdict=policy.verdict, rule_id=policy.rule_id,
-                    approver_id=policy.approver_id)
+    judge_out, judge_state = None, "skipped"
+    if policy.needs_judge:
+        judge_out, judge_state = _run_judge(conn, ticket_id, action_id, tool_name, args, policy)
+    final = combine(policy, judge_out, judge_state)
+    _set_action(conn, action_id, final_verdict=final.verdict)
 
-    if policy.verdict == BLOCK:
+    judge_info = None if judge_out is None else {
+        "verdict": judge_out.verdict, "risk_score": judge_out.risk_score,
+        "reason": judge_out.reason, "indicators": list(judge_out.indicators),
+    }
+    internal = dict(action_id=action_id, verdict=final.verdict, rule_id=policy.rule_id,
+                    approver_id=final.approver_id, decided_by=final.decided_by, judge=judge_info)
+
+    if final.verdict == BLOCK:
         _set_action(conn, action_id, status=ActionStatus.BLOCKED.value, latency_ms=_elapsed_ms(started))
-        log_event(conn, "action_blocked", "warden", ticket_id,
-                  {"action_id": action_id, "tool": tool_name, "rule_id": policy.rule_id})
-        return Decision("blocked", tool_name, reason=policy.reason, **internal)
+        log_event(conn, "action_blocked", "warden", ticket_id, {
+            "action_id": action_id, "tool": tool_name, "rule_id": policy.rule_id, "decided_by": final.decided_by})
+        _flag_ticket(conn, ticket_id)
+        reason = {"policy": policy.reason, "judge": JUDGE_BLOCKED_REASON}.get(final.decided_by, BLOCKED_REASON)
+        return Decision("blocked", tool_name, reason=reason, **internal)
 
-    if policy.verdict == REQUIRE_APPROVAL:
+    if final.verdict == REQUIRE_APPROVAL:
         _set_action(conn, action_id, status=ActionStatus.PENDING_APPROVAL.value, latency_ms=_elapsed_ms(started))
         with conn:
             conn.execute(
                 "UPDATE tickets SET status = 'PENDING_APPROVAL', updated_at = datetime('now') WHERE ticket_id = ?",
                 (ticket_id,))
         # The approvals row (with expiry) is created in milestone 6 from this event and the actions row.
-        log_event(conn, "approval_requested", "warden", ticket_id,
-                  {"action_id": action_id, "tool": tool_name, "approver_id": policy.approver_id})
+        log_event(conn, "approval_requested", "warden", ticket_id, {
+            "action_id": action_id, "tool": tool_name, "approver_id": final.approver_id,
+            "decided_by": final.decided_by})
         return Decision("pending_approval", tool_name, **internal)
 
-    if policy.verdict == ALLOW:
+    if final.verdict == ALLOW:
         decision = _run_tool(conn, ticket_id, action_id, tool_name, args, policy.obligations, started)
-        return replace(decision, rule_id=policy.rule_id, verdict=policy.verdict)
+        return replace(decision, rule_id=policy.rule_id, verdict=final.verdict,
+                       decided_by=final.decided_by, judge=judge_info)
 
-    raise ValueError(f"Unknown verdict: {policy.verdict}")  # caught by handle(): fail closed
+    raise ValueError(f"Unknown verdict: {final.verdict}")  # caught by handle(): fail closed
 
 
 def handle(conn, ticket_id, requester_id, tool_name, raw_args):
@@ -126,6 +179,7 @@ def handle(conn, ticket_id, requester_id, tool_name, raw_args):
     except Exception as e:
         try:
             log_event(conn, "warden_error", "warden", ticket_id, {"tool": tool_name, "error": type(e).__name__})
+            _flag_ticket(conn, ticket_id)
         except Exception:
             pass
         return Decision("blocked", tool_name, reason=BLOCKED_REASON, verdict=BLOCK, rule_id="P999")

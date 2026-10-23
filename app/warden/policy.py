@@ -400,7 +400,9 @@ def evaluate_policy(tool_name, args, requester_id, ticket_id, conn, policy=None)
             reason=winner.reason,
             approver_id=_resolve_approver(winner, facts) if winner.verdict == REQUIRE_APPROVAL else None,
             obligations=obligations,
-            needs_judge=bool(facts.spec and facts.spec.write and winner.verdict != BLOCK),
+            # Communication tools (resolve, escalate) only close the ticket, so they skip the judge.
+            needs_judge=bool(facts.spec and facts.spec.write and tool_name not in CLOSING_TOOLS
+                             and winner.verdict != BLOCK),
         )
     except Exception as e:  # invariant 4: fail closed
         return _blocked("P999", f"Policy evaluation failed: {type(e).__name__}")

@@ -18,12 +18,19 @@ from app.warden import warden_mode
 
 def print_step(s):
     print(f"\nStep {s['step']}: agent proposes {s['tool']}({json.dumps(s['args'])})")
+    j = s["judge"]
+    judge_line = (f"  judge: {j['verdict']} risk={j['risk_score']} indicators={j['indicators']}\n"
+                  f"         reason: {j['reason']}") if j else "  judge: not run"
     if s["status"] == "executed":
         print(f"  -> EXECUTED  policy={s['rule_id'] or 'none (Warden off)'}  result={json.dumps(s['result'])}")
     elif s["status"] == "pending_approval":
-        print(f"  -> PENDING APPROVAL  rule={s['rule_id']}  approver={s['approver_id']}")
+        print(f"  -> PENDING APPROVAL  decided_by={s['decided_by']}  policy rule={s['rule_id']}  "
+              f"approver={s['approver_id']}")
     else:
-        print(f"  -> BLOCKED  rule={s['rule_id']}  agent is told: {s['reason']!r}")
+        print(f"  -> BLOCKED  decided_by={s['decided_by']}  policy rule={s['rule_id']}  "
+              f"agent is told: {s['reason']!r}")
+    if s["decided_by"] is not None:  # Warden was on
+        print(judge_line)
 
 
 def main():

@@ -173,7 +173,7 @@ def escalate_to_human(conn, args: EscalateToHumanArgs):
     _require_ticket(conn, args.ticket_id)
     with conn:
         conn.execute(
-            "UPDATE tickets SET status = 'ESCALATED', resolution_note = ?, security_flag = ?, "
+            "UPDATE tickets SET status = 'ESCALATED', resolution_note = ?, security_flag = MAX(security_flag, ?), "
             "updated_at = datetime('now') WHERE ticket_id = ?",
             (args.summary, int(args.security_concern), args.ticket_id),
         )

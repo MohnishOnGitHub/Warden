@@ -47,6 +47,7 @@ def _record_step(steps, on_step, step_no, tool, args, decision):
         "step": step_no, "tool": tool, "args": args, "status": decision.status,
         "verdict": decision.verdict, "rule_id": decision.rule_id,
         "reason": decision.reason, "result": decision.result, "approver_id": decision.approver_id,
+        "decided_by": decision.decided_by, "judge": decision.judge,
     }
     steps.append(step)
     if on_step:
@@ -61,7 +62,7 @@ def _escalate(conn, env, summary, security_concern, steps, on_step, step_no):
     if decision.status != "executed":
         with conn:
             conn.execute(
-                "UPDATE tickets SET status = 'ESCALATED', security_flag = ?, resolution_note = ?, "
+                "UPDATE tickets SET status = 'ESCALATED', security_flag = MAX(security_flag, ?), resolution_note = ?, "
                 "updated_at = datetime('now') WHERE ticket_id = ?",
                 (int(security_concern), summary, env.ticket_id))
         log_event(conn, "forced_escalation", "agent", env.ticket_id, {"reason": "escalation was refused"})

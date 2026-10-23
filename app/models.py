@@ -29,6 +29,8 @@ class Decision:
     verdict: str | None = None
     rule_id: str | None = None
     approver_id: str | None = None
+    decided_by: str | None = None  # policy | judge | judge_unavailable | judge_invalid (internal)
+    judge: dict | None = None     # judge verdict, risk, indicators, reason (internal, never shown to the agent)
 
     def for_agent(self):
         """The only view of a decision the agent may see: no rule ids, no scores."""

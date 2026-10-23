@@ -12,8 +12,10 @@ MARKER_PATTERNS = {
     "system_keyword": r"(?i)\b(system|assistant|developer)\s*:",
     "ignore_instructions": r"(?i)\b(ignore|disregard|override|forget)\b.{0,30}\b(instructions|rules|policy|prompt)\b",
     "role_override": r"(?i)\byou are now\b",
+    # Lines addressed to the agent: "ACTION REQUIRED: ...", "support agent must ...".
+    "imperative_directive": r"(?i)\b(action|attention|response) required\b|\b(agent|assistant|bot|ai)\s+(must|should|needs to|has to|is required to)\b",
     "tag_spoof": r"(?i)</?\s*untrusted_ticket",
-    "zero_width_chars": "[​-‏⁠﻿]",
+    "zero_width_chars": r"[​-‏⁠﻿]",
     "base64_blob": r"[A-Za-z0-9+/]{40,}={0,2}",
     "privileged_group_mention": r"(?i)\b(DomainAdmins|GlobalAdmins|SecurityAdmins)\b",
 }
@@ -25,7 +27,7 @@ def scan_markers(text):
     return [name for name, pattern in _COMPILED.items() if pattern.search(text)]
 
 
-def _escape(text):
+def escape_text(text):
     return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
@@ -34,7 +36,7 @@ def wrap_untrusted(subject, body):
 
     < > & are escaped, so the text cannot close the block or open a fake one.
     """
-    return f"<untrusted_ticket>\nSubject: {_escape(subject)}\nBody: {_escape(body)}\n</untrusted_ticket>"
+    return f"<untrusted_ticket>\nSubject: {escape_text(subject)}\nBody: {escape_text(body)}\n</untrusted_ticket>"
 
 
 @dataclass(frozen=True)
