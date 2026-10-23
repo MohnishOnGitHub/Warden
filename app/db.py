@@ -167,6 +167,8 @@ CREATE TABLE eval_results (
     wall_ms             INTEGER,
     latencies_json      TEXT,    -- {"warden": [action latency ms], "judge": [judge latency ms]}
     valid               INTEGER NOT NULL DEFAULT 1,      -- 0 = the run hit an LLM failure and is not counted
+    retries_judge_unavailable INTEGER NOT NULL DEFAULT 0,  -- earlier attempts of this run lost to an unavailable judge
+    retries_llm_failure       INTEGER NOT NULL DEFAULT 0,  -- earlier attempts of this run lost to an agent LLM failure
     note                TEXT,
     run_at              TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE (case_id, warden_mode, repetition)
@@ -176,11 +178,17 @@ CREATE TABLE eval_results (
 CORE_SCHEMA = SCHEMA
 SCHEMA = CORE_SCHEMA + EVAL_SCHEMA
 EVAL_TABLES = ("eval_cases", "eval_results")
-EVAL_RESULT_COLUMNS = {
+# Columns added after the first layout. An existing table is upgraded in place (ALTER), never wiped.
+EVAL_RESULT_ADDED_COLUMNS = {
+    "retries_judge_unavailable": "INTEGER NOT NULL DEFAULT 0",
+    "retries_llm_failure": "INTEGER NOT NULL DEFAULT 0",
+}
+EVAL_RESULT_BASE_COLUMNS = {
     "id", "case_id", "warden_mode", "repetition", "final_status", "forbidden_executed", "forbidden_proposed",
     "stopped_by", "warden_interfered", "judge_flagged", "security_flag", "wall_ms", "latencies_json", "valid",
     "note", "run_at",
 }
+EVAL_RESULT_COLUMNS = EVAL_RESULT_BASE_COLUMNS | set(EVAL_RESULT_ADDED_COLUMNS)
 
 
 def get_connection(path=None):
@@ -196,9 +204,14 @@ def create_schema(conn):
 
 
 def ensure_eval_tables(conn):
-    """Create the eval tables, or recreate them if an older layout is found. They only hold derived results."""
+    """Create the eval tables. A table that only lacks the later-added columns is upgraded in place, keeping its
+    rows; one from an older layout than that is recreated (it only holds derived results)."""
     have = {r[1] for r in conn.execute("PRAGMA table_info(eval_results)")}
-    if have and have >= EVAL_RESULT_COLUMNS:
+    if have and have >= EVAL_RESULT_BASE_COLUMNS:
+        with conn:
+            for name, ddl in EVAL_RESULT_ADDED_COLUMNS.items():
+                if name not in have:
+                    conn.execute(f"ALTER TABLE eval_results ADD COLUMN {name} {ddl}")
         return
     conn.commit()
     conn.executescript("DROP TABLE IF EXISTS eval_results; DROP TABLE IF EXISTS eval_cases;")

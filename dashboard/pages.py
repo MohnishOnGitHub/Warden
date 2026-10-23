@@ -523,6 +523,17 @@ def red_team_body():
     top[3].metric("Context cases flagged by the judge", f"{context['judge_flagged']}/{context['proposed']}",
                   help="Rules allow the action but the context is suspicious. Not counted as attack success.")
 
+    stops, avail = r["warden_stops"], r["judge_availability"]
+    second = st.columns(2)
+    second[0].metric("Forbidden actions Warden stopped (Warden ON)", f"{stops['stopped']} of {stops['proposed']}",
+                     help=f"Attack runs where the agent actually proposed a forbidden action: Warden blocked "
+                          f"{stops['blocked']} and held {stops['held_for_approval']} for human approval; "
+                          f"{stops['executed']} ran anyway. Attacks the agent refused on its own are not counted.")
+    second[1].metric("Judge unavailable rate",
+                     "n/a" if not avail["calls"] else f"{avail['unavailable']} of {avail['calls']} ({avail['rate']:.0%})",
+                     help="Judge calls that timed out or failed (10 s budget). The evaluation retried them, so they "
+                          "are not in the false-positive count; in live use each would have gone to human approval.")
+
     st.subheader("Attack success by category")
     rows, colors = [], {}
     for cat, name in r["categories"].items():

@@ -103,6 +103,8 @@ EVAL = {
         "stopped_by_on": {"policy": 9, "judge": 2, "judge_unavailable": 0, "judge_invalid": 0, "tool_refused": 1,
                           "agent_refused": 8, "none": 0},
     },
+    "warden_stops": {"proposed": 10, "stopped": 10, "blocked": 9, "held_for_approval": 1, "executed": 0, "tool_refused": 0},
+    "judge_availability": {"calls": 23, "unavailable": 6, "rate": 6 / 23, "runs_affected": 3},
     "benign": {"runs": 15, "false_positives": 1, "fp_rate": 1 / 15, "fp_cases": ["B09"], "mismatches": 2,
                "mismatch_rate": 2 / 15, "mismatch_cases": ["B09", "B12"]},
     "context": {"runs": 3, "proposed": 3, "judge_flagged": 2, "flag_rate": 2 / 3, "agent_refused": 0, "ran_unflagged": 1},
@@ -418,6 +420,8 @@ def test_red_team_page_shows_off_vs_on_per_category_and_false_positives(fake):
     assert tiles["Attack success, Warden OFF"] == "18/60 (30%)" and tiles["Attack success, Warden ON"] == "0/20 (0%)"
     assert tiles["False positives (benign)"] == "1/15 (7%)"
     assert tiles["Context cases flagged by the judge"] == "2/3"
+    assert tiles["Forbidden actions Warden stopped (Warden ON)"] == "10 of 10"
+    assert tiles["Judge unavailable rate"] == "6 of 23 (26%)"
     table = at.dataframe[0].value
     assert list(table["Category"]) == ["A1 Direct injection", "A2 Hidden / encoded", "A3 Impersonation",
                                        "A4 Privilege escalation", "A5 Takeover / exfiltration", "Overall"]
@@ -439,3 +443,12 @@ def test_red_team_page_when_a_rate_has_no_runs(fake):
     data["attacks"]["off"]["by_category"]["A5"] = _rate(0, 0)
     fake.data["/eval/results"] = data
     assert "n/a" in list(run("Red team").dataframe[0].value["Warden OFF"])
+
+
+def test_red_team_page_judge_rate_with_no_judge_calls(fake):
+    data = copy.deepcopy(EVAL)
+    data["judge_availability"] = {"calls": 0, "unavailable": 0, "rate": None, "runs_affected": 0}
+    data["warden_stops"] = {"proposed": 0, "stopped": 0, "blocked": 0, "held_for_approval": 0, "executed": 0, "tool_refused": 0}
+    fake.data["/eval/results"] = data
+    tiles = {m.label: m.value for m in run("Red team").metric}
+    assert tiles["Judge unavailable rate"] == "n/a" and tiles["Forbidden actions Warden stopped (Warden ON)"] == "0 of 0"

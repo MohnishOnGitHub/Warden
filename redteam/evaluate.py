@@ -231,11 +231,13 @@ def has_valid_result(conn, case_id, mode, rep):
 
 def save_result(conn, case_id, spec, result):
     if replay.mode() == "play":
-        # A replay has no real latency. Keep the numbers measured when the run was recorded.
-        old = conn.execute("SELECT wall_ms, latencies_json FROM eval_results WHERE case_id = ? AND warden_mode = ? "
+        # A replay has no real latency, and cannot repeat failed LLM calls (they were never cached). Keep what
+        # was measured while the run was recorded.
+        kept = ("wall_ms", "latencies_json", "retries_judge_unavailable", "retries_llm_failure")
+        old = conn.execute(f"SELECT {', '.join(kept)} FROM eval_results WHERE case_id = ? AND warden_mode = ? "
                            "AND repetition = ?", (case_id, spec.mode, spec.rep)).fetchone()
         if old:
-            result = {**result, "wall_ms": old["wall_ms"], "latencies_json": old["latencies_json"]}
+            result = {**result, **{k: old[k] for k in kept}}
     cols = ["case_id", "warden_mode", "repetition", *result]
     with conn:
         conn.execute(
@@ -254,6 +256,7 @@ def execute(plan, cases, conn, sim, llm_fn=None, resume=False, cooldown=COOLDOWN
             counts["skipped"] += 1
             log(f"{label}: already done, skipped")
             continue
+        lost = []  # notes of attempts thrown away because of LLM trouble
         for attempt in range(MAX_INFRA_RETRIES + 1):
             result = run_case(spec, by_ref[spec.ref], sim, llm_fn)
             if replay.MISSES:
@@ -262,9 +265,12 @@ def execute(plan, cases, conn, sim, llm_fn=None, resume=False, cooldown=COOLDOWN
             if result["valid"]:
                 break
             if attempt < MAX_INFRA_RETRIES:
+                lost.append(result["note"] or "")
                 log(f"{label}: LLM problem ({result['note']}), retrying after a cooldown")
                 if replay.mode() != "play":
                     time.sleep(cooldown)
+        result["retries_judge_unavailable"] = sum("judge_unavailable" in n for n in lost)
+        result["retries_llm_failure"] = sum("llm_failure" in n or "agent_error" in n for n in lost)
         if not result["valid"]:
             counts["invalid"] += 1
         save_result(conn, case_ids[spec.ref], spec, result)
@@ -300,6 +306,13 @@ def print_summary(s, out=print):
     out(f"  False positives: {b['false_positives']}/{b['runs']}" + (f" ({b['fp_rate']:.0%})" if b["runs"] else "")
         + (f"  {b['fp_cases']}" if b["fp_cases"] else ""))
     out(f"  Outcome mismatches: {b['mismatches']}/{b['runs']}" + (f"  {b['mismatch_cases']}" if b["mismatch_cases"] else ""))
+    w, j = s["warden_stops"], s["judge_availability"]
+    out(f"\nWARDEN'S CATCH (Warden on): forbidden actions proposed {w['proposed']}; stopped by Warden {w['stopped']} "
+        f"of {w['proposed']} ({w['blocked']} blocked, {w['held_for_approval']} held for approval); "
+        f"ran anyway {w['executed']}; refused by the tool itself {w['tool_refused']}")
+    out(f"JUDGE UNAVAILABLE (timeout, rate limit or error): {j['unavailable']} of {j['calls']} judge calls"
+        + (f" ({j['rate']:.0%})" if j["calls"] else "") + f", affecting {j['runs_affected']} run(s). "
+        "The evaluation retried them; in live use each would have gone to approval.")
     c = s["context"]
     out(f"\nCONTEXT (rules allow it, context is suspicious; reported apart from attack success)")
     out(f"  Judge escalated or blocked: {c['judge_flagged']}/{c['proposed']} proposed"

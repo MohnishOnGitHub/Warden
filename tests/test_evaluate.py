@@ -188,8 +188,9 @@ def test_llm_failure_makes_the_run_invalid_after_retries(harness):
     counts = execute([RunSpec("A4-1", "attack", "on", 1)], [attack_case()], main, sim, llm_fn=boom, cooldown=0, log=lambda *_: None)
     assert counts == {"run": 1, "skipped": 0, "invalid": 1}
     assert boom.calls == evaluate.MAX_INFRA_RETRIES + 1
-    row = main.execute("SELECT valid, note FROM eval_results").fetchone()
+    row = main.execute("SELECT valid, note, retries_llm_failure FROM eval_results").fetchone()
     assert (row["valid"], row["note"]) == (0, "llm_failure")
+    assert row["retries_llm_failure"] == evaluate.MAX_INFRA_RETRIES  # attempts before the last one, which is the row
     assert eval_metrics.summarize(main) == {"available": False, "invalid_runs": 1}
 
 
@@ -199,6 +200,7 @@ def test_a_retry_that_works_is_recorded_as_valid(harness):
                      cooldown=0, log=lambda *_: None)
     assert counts["invalid"] == 0
     assert main.execute("SELECT valid, stopped_by FROM eval_results").fetchone()[:] == (1, "agent_refused")
+    assert main.execute("SELECT retries_llm_failure FROM eval_results").fetchone()[0] == 1
 
 
 def test_judge_unavailable_is_treated_as_infrastructure_noise(harness, fake_judge):
@@ -335,3 +337,82 @@ def test_summary_prints_every_section(harness, capsys):
     for heading in ("ATTACK SUCCESS", "A4 Privilege escalation", "BENIGN", "CONTEXT", "LATENCY", "Overall"):
         assert heading in out
     assert "False positives: 0/1" in out and "Judge escalated or blocked: 0/1" in out
+
+
+def test_judge_unavailable_attempts_are_counted_per_run(harness, fake_judge):
+    main, sim = harness
+    answers = iter([llm.LLMError("503"), llm.LLMError("503"), judge_reply()])
+    fake_judge.reply = lambda contents: next(answers)
+    counts = execute([RunSpec("C1", "context", "on", 1)], [context_case()], main, sim,
+                     llm_fn=ScriptedLLM([[("reset_password", {"user_id": "arjun.m"})]] * 3 + [RESOLVE]),
+                     cooldown=0, log=lambda *_: None)
+    row = main.execute("SELECT valid, retries_judge_unavailable, retries_llm_failure FROM eval_results").fetchone()
+    assert counts["invalid"] == 0 and tuple(row) == (1, 2, 0)
+    j = eval_metrics.summarize(main)["judge_availability"]
+    assert (j["unavailable"], j["calls"], j["runs_affected"]) == (2, 3, 1)
+
+
+def test_replaying_keeps_the_retry_counts_from_the_recording(harness, monkeypatch):
+    main, sim = harness
+    [case_id] = sync_cases(main, [attack_case()]).values()
+    spec = RunSpec("A4-1", "attack", "on", 1)
+    base = {"final_status": "ESCALATED", "forbidden_executed": 0, "forbidden_proposed": 1, "stopped_by": "policy",
+            "warden_interfered": 0, "judge_flagged": 0, "security_flag": 1, "valid": 1, "note": None,
+            "wall_ms": 100, "latencies_json": "{}"}
+    save_result(main, case_id, spec, {**base, "retries_judge_unavailable": 2, "retries_llm_failure": 1})
+    monkeypatch.setenv("REPLAY_MODE", "play")
+    save_result(main, case_id, spec, {**base, "retries_judge_unavailable": 0, "retries_llm_failure": 0})
+    row = main.execute("SELECT retries_judge_unavailable, retries_llm_failure FROM eval_results").fetchone()
+    assert tuple(row) == (2, 1)  # a replay cannot repeat calls that failed, so it must not erase them
+
+
+def test_summary_prints_the_two_new_metrics(harness, capsys):
+    main, sim = harness
+    execute([RunSpec("A4-1", "attack", "on", 1)], [attack_case()], main, sim,
+            llm_fn=ScriptedLLM([[("grant_group_membership", GRANT_DA)], CLOSE]), log=lambda *_: None)
+    evaluate.print_summary(eval_metrics.summarize(main))
+    out = capsys.readouterr().out
+    assert "stopped by Warden 1 of 1 (1 blocked, 0 held for approval)" in out
+    assert "JUDGE UNAVAILABLE" in out and "0 of 0 judge calls" in out
+
+
+# Upgrading the eval tables in place ------------------------------------------------------------------
+
+OLD_LAYOUT = """
+CREATE TABLE eval_cases (case_id INTEGER PRIMARY KEY AUTOINCREMENT, ref TEXT NOT NULL UNIQUE, label TEXT NOT NULL,
+    category TEXT NOT NULL, requester_id TEXT NOT NULL, subject TEXT NOT NULL, body TEXT NOT NULL,
+    expected_status TEXT NOT NULL, forbidden_actions_json TEXT NOT NULL DEFAULT '[]');
+CREATE TABLE eval_results (id INTEGER PRIMARY KEY AUTOINCREMENT, case_id INTEGER NOT NULL, warden_mode TEXT NOT NULL,
+    repetition INTEGER NOT NULL DEFAULT 1, final_status TEXT NOT NULL, forbidden_executed INTEGER NOT NULL,
+    forbidden_proposed INTEGER NOT NULL DEFAULT 0, stopped_by TEXT, warden_interfered INTEGER NOT NULL DEFAULT 0,
+    judge_flagged INTEGER NOT NULL DEFAULT 0, security_flag INTEGER NOT NULL DEFAULT 0, wall_ms INTEGER,
+    latencies_json TEXT, valid INTEGER NOT NULL DEFAULT 1, note TEXT, run_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (case_id, warden_mode, repetition));
+"""
+
+
+def test_a_table_missing_only_the_newer_columns_is_upgraded_and_keeps_its_rows(tmp_path):
+    c = get_connection(tmp_path / "old.db")
+    c.executescript(OLD_LAYOUT)
+    c.execute("INSERT INTO eval_cases (ref, label, category, requester_id, subject, body, expected_status) "
+              "VALUES ('A1-1', 'attack', 'A1', 'rahul.k', 's', 'b', 'ESCALATED')")
+    c.execute("INSERT INTO eval_results (case_id, warden_mode, final_status, forbidden_executed, wall_ms) "
+              "VALUES (1, 'on', 'ESCALATED', 0, 4321)")
+    c.commit()
+    ensure_eval_tables(c)
+    row = c.execute("SELECT wall_ms, retries_judge_unavailable, retries_llm_failure FROM eval_results").fetchone()
+    assert tuple(row) == (4321, 0, 0)  # data kept, new counters default to 0
+    assert c.execute("SELECT COUNT(*) FROM eval_cases").fetchone()[0] == 1
+    ensure_eval_tables(c)  # idempotent
+    assert c.execute("SELECT COUNT(*) FROM eval_results").fetchone()[0] == 1
+    c.close()
+
+
+def test_a_much_older_layout_is_recreated(tmp_path):
+    c = get_connection(tmp_path / "ancient.db")
+    c.executescript("CREATE TABLE eval_results (id INTEGER PRIMARY KEY, case_id INTEGER, warden_mode TEXT,"
+                    " final_status TEXT, forbidden_executed INTEGER, run_at TEXT);")
+    ensure_eval_tables(c)
+    cols = {r[1] for r in c.execute("PRAGMA table_info(eval_results)")}
+    assert {"retries_judge_unavailable", "latencies_json", "stopped_by"} <= cols
+    c.close()

@@ -316,6 +316,7 @@ def test_eval_results_endpoint(api):
     r = api.get("/eval/results").json()
     assert r["available"] and r["attacks"]["on"]["overall"] == {"runs": 1, "succeeded": 0, "rate": 0.0}
     assert r["attacks"]["stopped_by_on"]["policy"] == 1 and list(r["categories"]) == ["A1", "A2", "A3", "A4", "A5"]
+    assert r["warden_stops"]["proposed"] == 0 and r["judge_availability"]["rate"] is None
 
 
 def test_demo_reset_keeps_the_evaluation_results(api, monkeypatch):
