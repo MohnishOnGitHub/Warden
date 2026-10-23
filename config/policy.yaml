@@ -1,0 +1,171 @@
+# Warden policy rules. Loaded and validated by app/warden/policy.py.
+#
+# Every rule whose tools and conditions hold is matched. The most restrictive
+# verdict wins (BLOCK > REQUIRE_APPROVAL > ALLOW). If no rule matches, the
+# default below applies. Policy never sees ticket text.
+#
+# Rule fields:
+#   id          unique rule id
+#   tools       list of tool names, or "*" for every tool
+#   when        predicates that must all hold; "not <name>" negates one
+#   verdict     ALLOW | REQUIRE_APPROVAL | BLOCK
+#   reason      short explanation, for the audit log and dashboard
+#   approver    REQUIRE_APPROVAL only: a user_id, or group_owner
+#   obligations optional dict handed to the tool by Warden (e.g. redact)
+
+limits:
+  max_writes_per_ticket: 3
+  max_message_length: 500
+  secret_patterns:
+    - '(?i)password\s*(is|:|=)'
+    - '(?i)(token|secret|api[_-]?key)\s*(is|:|=)'
+    # 16+ chars of letters, digits, _ or - that mix letters and digits (looks like a generated secret)
+    - '(?=\S*\d)(?=\S*[A-Za-z])[A-Za-z0-9_-]{16,}'
+  link_patterns:
+    - '(?i)https?://'
+    - '(?i)\bwww\.'
+
+default:
+  id: P999
+  verdict: BLOCK
+  reason: No policy rule matched this action.
+
+rules:
+  # General -------------------------------------------------------------------
+  - id: P001
+    tools: "*"
+    when: [tool_unknown]
+    verdict: BLOCK
+    reason: Unknown tool.
+  - id: P002
+    tools: "*"
+    when: [args_invalid]
+    verdict: BLOCK
+    reason: Invalid arguments.
+  - id: P003
+    tools: "*"
+    when: [is_counted_write, write_limit_reached]
+    verdict: BLOCK
+    reason: Too many write actions on this ticket.
+  - id: P004
+    tools: "*"
+    when: [target_user_missing]
+    verdict: BLOCK
+    reason: Target user does not exist.
+
+  # get_user_profile ----------------------------------------------------------
+  - id: P010
+    tools: [get_user_profile]
+    when: [target_is_self]
+    verdict: ALLOW
+    reason: Users may read their own profile.
+  - id: P011
+    tools: [get_user_profile]
+    when: [requester_is_it]
+    verdict: ALLOW
+    reason: IT staff may read any profile.
+  - id: P012
+    tools: [get_user_profile]
+    when: [not target_is_self, not requester_is_it]
+    verdict: ALLOW
+    reason: Other users get a redacted profile.
+    obligations: {redact: true}
+
+  # reset_password / unlock_account -------------------------------------------
+  - id: P020
+    tools: [reset_password, unlock_account]
+    when: [target_is_self]
+    verdict: ALLOW
+    reason: Self service.
+  - id: P021
+    tools: [reset_password, unlock_account]
+    when: [not target_is_self, requester_is_it]
+    verdict: REQUIRE_APPROVAL
+    approver: sam.t
+    reason: IT acting on another user needs admin approval.
+  - id: P022
+    tools: [reset_password, unlock_account]
+    when: [not target_is_self, not requester_is_it]
+    verdict: BLOCK
+    reason: Non-IT requester cannot act on another user's account.
+
+  # install_software ----------------------------------------------------------
+  - id: P030
+    tools: [install_software]
+    when: [device_not_owned]
+    verdict: BLOCK
+    reason: Device is unknown or not owned by the requester.
+  - id: P031
+    tools: [install_software]
+    when: [package_denied]
+    verdict: BLOCK
+    reason: Package is on the denied list.
+  - id: P032
+    tools: [install_software]
+    when: [package_needs_approval_or_unknown]
+    verdict: REQUIRE_APPROVAL
+    approver: sam.t
+    reason: Package needs approval or is not in the catalogue.
+  - id: P033
+    tools: [install_software]
+    when: [package_approved, not device_not_owned]
+    verdict: ALLOW
+    reason: Approved package on the requester's own device.
+
+  # grant_group_membership ----------------------------------------------------
+  - id: P040
+    tools: [grant_group_membership]
+    when: [group_privileged]
+    verdict: BLOCK
+    reason: Privileged groups cannot be granted by the service desk.
+  - id: P041
+    tools: [grant_group_membership]
+    when: [group_missing]
+    verdict: BLOCK
+    reason: Group does not exist.
+  - id: P042
+    tools: [grant_group_membership]
+    when: [not target_is_self, not requester_is_it, not requester_manages_target]
+    verdict: BLOCK
+    reason: Only the user, their manager or IT may request access for them.
+  - id: P043
+    tools: [grant_group_membership]
+    when: [group_standard]
+    verdict: REQUIRE_APPROVAL
+    approver: group_owner
+    reason: Standard group membership needs the group owner's approval.
+
+  # restart_service -----------------------------------------------------------
+  - id: P050
+    tools: [restart_service]
+    when: [service_not_restartable]
+    verdict: BLOCK
+    reason: Service is unknown or not restartable.
+  - id: P051
+    tools: [restart_service]
+    when: [service_restartable, service_prod]
+    verdict: REQUIRE_APPROVAL
+    approver: sam.t
+    reason: Production restarts need admin approval.
+  - id: P052
+    tools: [restart_service]
+    when: [service_restartable, service_nonprod]
+    verdict: ALLOW
+    reason: Non-production restartable service.
+
+  # resolve_ticket / escalate_to_human ----------------------------------------
+  - id: P060
+    tools: [resolve_ticket, escalate_to_human]
+    when: [ticket_id_mismatch]
+    verdict: BLOCK
+    reason: Action targets a different ticket.
+  - id: P061
+    tools: [resolve_ticket, escalate_to_human]
+    when: [message_unsafe]
+    verdict: BLOCK
+    reason: Message is too long, contains a secret, or contains an external link.
+  - id: P062
+    tools: [resolve_ticket, escalate_to_human]
+    when: [not ticket_id_mismatch, not message_unsafe]
+    verdict: ALLOW
+    reason: Safe update to the current ticket.
