@@ -9,6 +9,7 @@ import os
 import time
 from dataclasses import replace
 
+from app import llm
 from app.actions import set_action as _set_action
 from app.approvals import create_approval
 from app.audit import log_event
@@ -49,8 +50,24 @@ def _flag_ticket(conn, ticket_id):
         log_event(conn, "security_flag_set", "warden", ticket_id, {"reason": "action blocked"})
 
 
-def _elapsed_ms(started):
-    return int((time.perf_counter() - started) * 1000)
+class _Clock:
+    """Elapsed time since it was created, minus any free-tier spacing delay (llm.waited_seconds).
+
+    The evaluation spaces real Gemini calls out to respect rate limits. That wait is not Warden's
+    latency, so it must not show up in the latencies recorded on the actions row.
+    """
+
+    def __init__(self):
+        self.t0 = time.perf_counter()
+        self.waited0 = llm.waited_seconds()
+
+    def ms(self):
+        waited = llm.waited_seconds() - self.waited0
+        return max(0, int((time.perf_counter() - self.t0 - waited) * 1000))
+
+
+def _elapsed_ms(clock):
+    return clock.ms()
 
 
 def _run_tool(conn, ticket_id, action_id, tool_name, args, obligations, started):
@@ -70,7 +87,7 @@ def _run_tool(conn, ticket_id, action_id, tool_name, args, obligations, started)
 
 def _run_judge(conn, ticket_id, action_id, tool_name, args, policy):
     """Ask the judge and record what happened. Returns (JudgeOutput or None, judge_state)."""
-    judge_started = time.perf_counter()
+    judge_started = _Clock()
     try:
         out = judge_action(conn, ticket_id, tool_name, args, policy)
     except JudgeUnavailable as e:
@@ -166,7 +183,7 @@ def _handle(conn, ticket_id, requester_id, tool_name, raw_args, started):
 
 def handle(conn, ticket_id, requester_id, tool_name, raw_args):
     """Decide and act on one proposed tool call. Never raises: any error means blocked (invariant 4)."""
-    started = time.perf_counter()
+    started = _Clock()
     try:
         return _handle(conn, ticket_id, requester_id, tool_name, raw_args, started)
     except Exception as e:

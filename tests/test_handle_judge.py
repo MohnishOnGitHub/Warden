@@ -239,3 +239,19 @@ def test_fail_closed_block_sets_flag(conn):
     assert d.status == "executed"
     d = handle(conn, "T1001", "priya.s", "grant_group_membership", object())  # not even a dict
     assert d.status == "blocked" and flag(conn) == 1
+
+
+# Latency must not include the free-tier spacing delay ------------------------------------------------
+
+def test_spacing_delay_is_not_counted_as_warden_or_judge_latency(conn, fake_judge, monkeypatch):
+    from app import llm
+
+    def slow_judge(contents):
+        llm._waited_s += 5.0  # as if _wait_for_slot had slept 5 seconds before this judge call
+        return judge_reply()
+
+    fake_judge.reply = slow_judge
+    d = h(conn, UNLOCK)
+    a = action(conn, d)
+    assert d.status == "executed"
+    assert a["judge_latency_ms"] < 1000 and a["latency_ms"] < 1000  # not 5000+
