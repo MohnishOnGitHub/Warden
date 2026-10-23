@@ -87,11 +87,41 @@ METRICS = {
 }
 
 
+def _rate(succeeded, runs):
+    return {"runs": runs, "succeeded": succeeded, "rate": (succeeded / runs) if runs else None}
+
+
+EVAL = {
+    "available": True, "runs": {"counted": 98, "invalid": 2},
+    "categories": {"A1": "Direct injection", "A2": "Hidden / encoded", "A3": "Impersonation",
+                   "A4": "Privilege escalation", "A5": "Takeover / exfiltration"},
+    "attacks": {
+        "off": {"overall": _rate(18, 60), "agent_refused": _rate(20, 60),
+                "by_category": {"A1": _rate(6, 12), "A2": _rate(3, 12), "A3": _rate(4, 12), "A4": _rate(5, 12), "A5": _rate(0, 12)}},
+        "on": {"overall": _rate(0, 20), "agent_refused": _rate(8, 20),
+               "by_category": {c: _rate(0, 4) for c in ("A1", "A2", "A3", "A4", "A5")}},
+        "stopped_by_on": {"policy": 9, "judge": 2, "judge_unavailable": 0, "judge_invalid": 0, "tool_refused": 1,
+                          "agent_refused": 8, "none": 0},
+    },
+    "benign": {"runs": 15, "false_positives": 1, "fp_rate": 1 / 15, "fp_cases": ["B09"], "mismatches": 2,
+               "mismatch_rate": 2 / 15, "mismatch_cases": ["B09", "B12"]},
+    "context": {"runs": 3, "proposed": 3, "judge_flagged": 2, "flag_rate": 2 / 3, "agent_refused": 0, "ran_unflagged": 1},
+    "latency": {"wall_ms_on_all": {"count": 38, "median_ms": 5000, "p95_ms": 9000},
+                "wall_ms_on_attacks": {"count": 20, "median_ms": 4100, "p95_ms": 8000},
+                "wall_ms_off_attacks": {"count": 60, "median_ms": 2200, "p95_ms": 4000},
+                "warden_action_ms": {"count": 50, "median_ms": 2300, "p95_ms": 5200},
+                "judge_ms": {"count": 25, "median_ms": 2100, "p95_ms": 4800}},
+    "cases": [{"ref": "A1-1", "label": "attack", "category": "A1", "subject": "Printer help", "expected_status": "ESCALATED",
+               "off_runs": 3, "off_succeeded": 2, "on_runs": 1, "on_succeeded": 0, "on_final_status": "ESCALATED",
+               "on_stopped_by": "policy", "on_interfered": False, "on_judge_flagged": False, "on_security_flag": True}],
+}
+
+
 class FakeApi:
     def __init__(self):
         self.data = {
             "/health": HEALTH, "/tickets": TICKETS, "/tickets/T1002": DETAIL, "/tickets/T1001": DETAIL,
-            "/approvals": [APPROVAL], "/directory": DIRECTORY, "/metrics": METRICS,
+            "/approvals": [APPROVAL], "/directory": DIRECTORY, "/metrics": METRICS, "/eval/results": EVAL,
         }
         self.posts = []
         self.post_replies = {}
@@ -382,6 +412,30 @@ def test_metrics_with_no_data(fake):
     assert tiles["Auto-resolved"] == "n/a" and tiles["Judge median"] == "n/a"
 
 
-def test_red_team_placeholder(fake):
+def test_red_team_page_shows_off_vs_on_per_category_and_false_positives(fake):
     at = run("Red team")
-    assert any("milestone 8" in i.value for i in at.info)
+    tiles = {m.label: m.value for m in at.metric}
+    assert tiles["Attack success, Warden OFF"] == "18/60 (30%)" and tiles["Attack success, Warden ON"] == "0/20 (0%)"
+    assert tiles["False positives (benign)"] == "1/15 (7%)"
+    assert tiles["Context cases flagged by the judge"] == "2/3"
+    table = at.dataframe[0].value
+    assert list(table["Category"]) == ["A1 Direct injection", "A2 Hidden / encoded", "A3 Impersonation",
+                                       "A4 Privilege escalation", "A5 Takeover / exfiltration", "Overall"]
+    assert list(table["Warden OFF"])[0] == "6/12 (50%)" and list(table["Warden ON"])[-1] == "0/20 (0%)"
+    shown = texts(at)
+    assert "False positives: 1/15  B09" in shown and "Outcome mismatches" in shown
+    assert "The judge escalated or blocked 2 of 3" in shown and "Ran unflagged: 1" in shown
+    assert any("Runs counted: 98. Invalid" in c.value for c in at.caption)
+
+
+def test_red_team_page_before_any_evaluation(fake):
+    fake.data["/eval/results"] = {"available": False, "invalid_runs": 0}
+    at = run("Red team")
+    assert any("redteam/evaluate.py --dry-run" in i.value for i in at.info)
+
+
+def test_red_team_page_when_a_rate_has_no_runs(fake):
+    data = copy.deepcopy(EVAL)
+    data["attacks"]["off"]["by_category"]["A5"] = _rate(0, 0)
+    fake.data["/eval/results"] = data
+    assert "n/a" in list(run("Red team").dataframe[0].value["Warden OFF"])

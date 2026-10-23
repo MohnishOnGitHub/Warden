@@ -487,10 +487,101 @@ def metrics():
 
 # Red team ----------------------------------------------------------------------
 
+def _rate_text(r):
+    return "n/a" if not r["runs"] else f"{r['succeeded']}/{r['runs']} ({r['rate']:.0%})"
+
+
+def _rate_colors(r):
+    """Attack success: 0% is good (green), some is amber, half or more is red. Always shown with the number."""
+    if not r["runs"]:
+        return ("#e6e6e6", "#444444")
+    if r["rate"] == 0:
+        return ("#d7f0d7", "#0b5a0b")
+    return ("#fdeec4", "#6b4a00") if r["rate"] < 0.5 else ("#f7d4d4", "#8a1f1f")
+
+
+def _ms(stats):
+    return "n/a" if stats["median_ms"] is None else f"{stats['median_ms']:.0f} / {stats['p95_ms']:.0f} ms (n={stats['count']})"
+
+
+@st.fragment(run_every=REFRESH_SECONDS)
+def red_team_body():
+    r = api_get("/eval/results")
+    if r is None:
+        return
+    if not r["available"]:
+        st.info("No evaluation results yet. From the repo root run `python redteam/evaluate.py --dry-run` to see "
+                "the plan and the Gemini call estimate, then `python redteam/evaluate.py --yes` for a live run.")
+        return
+    attacks, benign, context = r["attacks"], r["benign"], r["context"]
+    top = st.columns(4)
+    top[0].metric("Attack success, Warden OFF", _rate_text(attacks["off"]["overall"]))
+    top[1].metric("Attack success, Warden ON", _rate_text(attacks["on"]["overall"]))
+    top[2].metric("False positives (benign)", f"{benign['false_positives']}/{benign['runs']}" +
+                  ("" if benign["fp_rate"] is None else f" ({benign['fp_rate']:.0%})"),
+                  help="Benign tickets where Warden blocked something, or paused something policy did not require.")
+    top[3].metric("Context cases flagged by the judge", f"{context['judge_flagged']}/{context['proposed']}",
+                  help="Rules allow the action but the context is suspicious. Not counted as attack success.")
+
+    st.subheader("Attack success by category")
+    rows, colors = [], {}
+    for cat, name in r["categories"].items():
+        off, on = attacks["off"]["by_category"][cat], attacks["on"]["by_category"][cat]
+        rows.append({"Category": f"{cat} {name}", "Warden OFF": _rate_text(off), "Warden ON": _rate_text(on)})
+        colors[("off", _rate_text(off))], colors[("on", _rate_text(on))] = _rate_colors(off), _rate_colors(on)
+    off, on = attacks["off"]["overall"], attacks["on"]["overall"]
+    rows.append({"Category": "Overall", "Warden OFF": _rate_text(off), "Warden ON": _rate_text(on)})
+    colors[("off", _rate_text(off))], colors[("on", _rate_text(on))] = _rate_colors(off), _rate_colors(on)
+    df = pd.DataFrame(rows)
+    styled = (df.style.map(lambda v: _cell(colors.get(("off", v))), subset=["Warden OFF"])
+              .map(lambda v: _cell(colors.get(("on", v))), subset=["Warden ON"]))
+    st.dataframe(styled, hide_index=True, width="stretch")
+    st.caption("An attack succeeds when a forbidden action actually runs. Warden OFF is 3 runs per attack, "
+               "Warden ON is 1. The numbers are small: read them as a demonstration, not a statistic.")
+
+    left, right = st.columns(2)
+    with left:
+        st.subheader("Who stopped the attacks (Warden ON)")
+        labels = {"policy": "Policy rule", "judge": "Judge", "judge_unavailable": "Judge unavailable (approval)",
+                  "judge_invalid": "Judge output invalid", "tool_refused": "Tool refused",
+                  "agent_refused": "Agent refused on its own", "none": "Not stopped (attack succeeded)"}
+        st.dataframe(pd.DataFrame([{"Stopped by": labels[k], "Runs": v} for k, v in attacks["stopped_by_on"].items()]),
+                     hide_index=True, width="stretch")
+        st.caption(f"With Warden OFF the agent refused on its own in {_rate_text(attacks['off']['agent_refused'])} "
+                   "of attack runs.")
+    with right:
+        st.subheader("Latency (median / p95)")
+        lat = r["latency"]
+        st.dataframe(pd.DataFrame([
+            {"What": "Ticket, Warden ON (attacks)", "Time": _ms(lat["wall_ms_on_attacks"])},
+            {"What": "Ticket, Warden OFF (attacks)", "Time": _ms(lat["wall_ms_off_attacks"])},
+            {"What": "Warden, per action", "Time": _ms(lat["warden_action_ms"])},
+            {"What": "Judge call", "Time": _ms(lat["judge_ms"])}]), hide_index=True, width="stretch")
+
+    st.subheader("Benign tickets (Warden ON)")
+    st.text(f"False positives: {benign['false_positives']}/{benign['runs']}"
+            f"{'  ' + ', '.join(benign['fp_cases']) if benign['fp_cases'] else ''}")
+    st.text(f"Outcome mismatches (ticket ended differently than expected, for any reason): "
+            f"{benign['mismatches']}/{benign['runs']}"
+            f"{'  ' + ', '.join(benign['mismatch_cases']) if benign['mismatch_cases'] else ''}")
+
+    st.subheader("Context cases: rules allow it, context is suspicious")
+    st.text(f"The judge escalated or blocked {context['judge_flagged']} of {context['proposed']} where the agent "
+            f"proposed the action. Agent refused: {context['agent_refused']}. Ran unflagged: {context['ran_unflagged']}.")
+
+    with st.expander(f"All cases ({len(r['cases'])})"):
+        st.dataframe(pd.DataFrame([{
+            "Ref": c["ref"], "Type": c["label"], "Category": c["category"], "Subject": c["subject"],
+            "OFF succeeded": f"{c['off_succeeded']}/{c['off_runs']}" if c["off_runs"] else "",
+            "ON status": c["on_final_status"] or "", "ON stopped by": c["on_stopped_by"] or "",
+            "ON flagged by judge": "yes" if c["on_judge_flagged"] else ""} for c in r["cases"]]),
+            hide_index=True, width="stretch")
+    st.caption(f"Runs counted: {r['runs']['counted']}. Invalid (LLM failures, not counted): {r['runs']['invalid']}.")
+
+
 def red_team():
     st.header("Red team")
-    st.info("The attack/benign evaluation (Warden off vs on) arrives in milestone 8. "
-            "Until then, the demo tickets in the Live feed cover the main attack types.")
+    red_team_body()
 
 
 PAGES = {

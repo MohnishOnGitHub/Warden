@@ -13,7 +13,7 @@ from contextlib import asynccontextmanager
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 
-from app import approvals, audit, llm, views
+from app import approvals, audit, eval_metrics, llm, views
 from app.agent import run_ticket
 from app.audit import log_event
 from app.db import get_connection
@@ -229,6 +229,12 @@ def get_metrics(conn=Depends(get_db)):
 @app.get("/directory")
 def get_directory(conn=Depends(get_db)):
     return views.directory(conn)
+
+
+@app.get("/eval/results")
+def get_eval_results(conn=Depends(get_db)):
+    """Evaluation summary (redteam/evaluate.py writes the results). {"available": false} until a run exists."""
+    return eval_metrics.summarize(conn)
 
 
 # Admin (DEMO_MODE=1 only) ---------------------------------------------------------

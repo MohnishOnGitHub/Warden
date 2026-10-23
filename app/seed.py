@@ -1,7 +1,7 @@
 """Load the simulated directory from data/seed_directory.json, and reset a live database in place."""
 import json
 
-from app.db import ROOT, create_schema
+from app.db import CORE_SCHEMA, EVAL_TABLES, ROOT, ensure_eval_tables
 
 SEED_PATH = ROOT / "data" / "seed_directory.json"
 
@@ -37,10 +37,11 @@ def load_seed(conn, seed):
 
 
 def reset_in_place(conn):
-    """Drop every table (audit_log included) and reload the seed, on an open connection.
+    """Drop the demo tables (audit_log included) and reload the seed, on an open connection.
 
-    Only the DEMO_MODE=1 reset endpoint calls this. It exists because a running API cannot delete
-    the database file on Windows. DROP TABLE is the one way the append-only audit_log is ever wiped.
+    The eval tables are results, not demo state, so they are kept. Only the DEMO_MODE=1 reset
+    endpoint and the evaluation runner call this. It exists because a running API cannot delete the
+    database file on Windows. DROP TABLE is the one way the append-only audit_log is ever wiped.
     """
     seed = json.loads(SEED_PATH.read_text(encoding="utf-8"))
     conn.commit()
@@ -50,8 +51,10 @@ def reset_in_place(conn):
             "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")]
         with conn:
             for name in tables:
-                conn.execute(f'DROP TABLE "{name}"')
-            create_schema(conn)
+                if name not in EVAL_TABLES:
+                    conn.execute(f'DROP TABLE "{name}"')
+            conn.executescript(CORE_SCHEMA)
+            ensure_eval_tables(conn)
             load_seed(conn, seed)
     finally:
         conn.execute("PRAGMA foreign_keys = ON")

@@ -134,14 +134,18 @@ CREATE TRIGGER audit_log_no_delete BEFORE DELETE ON audit_log
 BEGIN
     SELECT RAISE(ABORT, 'audit_log is append only');
 END;
+"""
 
--- Eval -----------------------------------------------------------------------
-
+# Evaluation (milestone 8). These tables hold results, not demo state: the demo reset keeps them.
+# No foreign keys to the simulated directory, so they stay valid when the directory is reseeded.
+# For label 'context' cases, forbidden_actions_json holds the actions the judge is being watched on.
+EVAL_SCHEMA = """
 CREATE TABLE eval_cases (
     case_id                 INTEGER PRIMARY KEY AUTOINCREMENT,
-    label                   TEXT NOT NULL CHECK (label IN ('benign','attack')),
+    ref                     TEXT NOT NULL UNIQUE,
+    label                   TEXT NOT NULL CHECK (label IN ('benign','attack','context')),
     category                TEXT NOT NULL,
-    requester_id            TEXT NOT NULL REFERENCES users(user_id),
+    requester_id            TEXT NOT NULL,
     subject                 TEXT NOT NULL,
     body                    TEXT NOT NULL,
     expected_status         TEXT NOT NULL,
@@ -152,11 +156,31 @@ CREATE TABLE eval_results (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
     case_id             INTEGER NOT NULL REFERENCES eval_cases(case_id),
     warden_mode         TEXT NOT NULL CHECK (warden_mode IN ('on','off')),
+    repetition          INTEGER NOT NULL DEFAULT 1,
     final_status        TEXT NOT NULL,
     forbidden_executed  INTEGER NOT NULL CHECK (forbidden_executed IN (0,1)),
-    run_at              TEXT NOT NULL DEFAULT (datetime('now'))
+    forbidden_proposed  INTEGER NOT NULL DEFAULT 0,  -- the agent proposed a forbidden/watched action
+    stopped_by          TEXT,    -- policy | judge | judge_unavailable | judge_invalid | tool_refused | agent_refused | none
+    warden_interfered   INTEGER NOT NULL DEFAULT 0,  -- Warden blocked, or paused something policy did not require
+    judge_flagged       INTEGER NOT NULL DEFAULT 0,  -- the judge sent a watched action to approval or blocked it
+    security_flag       INTEGER NOT NULL DEFAULT 0,
+    wall_ms             INTEGER,
+    latencies_json      TEXT,    -- {"warden": [action latency ms], "judge": [judge latency ms]}
+    valid               INTEGER NOT NULL DEFAULT 1,      -- 0 = the run hit an LLM failure and is not counted
+    note                TEXT,
+    run_at              TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (case_id, warden_mode, repetition)
 );
 """
+
+CORE_SCHEMA = SCHEMA
+SCHEMA = CORE_SCHEMA + EVAL_SCHEMA
+EVAL_TABLES = ("eval_cases", "eval_results")
+EVAL_RESULT_COLUMNS = {
+    "id", "case_id", "warden_mode", "repetition", "final_status", "forbidden_executed", "forbidden_proposed",
+    "stopped_by", "warden_interfered", "judge_flagged", "security_flag", "wall_ms", "latencies_json", "valid",
+    "note", "run_at",
+}
 
 
 def get_connection(path=None):
@@ -169,3 +193,13 @@ def get_connection(path=None):
 
 def create_schema(conn):
     conn.executescript(SCHEMA)
+
+
+def ensure_eval_tables(conn):
+    """Create the eval tables, or recreate them if an older layout is found. They only hold derived results."""
+    have = {r[1] for r in conn.execute("PRAGMA table_info(eval_results)")}
+    if have and have >= EVAL_RESULT_COLUMNS:
+        return
+    conn.commit()
+    conn.executescript("DROP TABLE IF EXISTS eval_results; DROP TABLE IF EXISTS eval_cases;")
+    conn.executescript(EVAL_SCHEMA)

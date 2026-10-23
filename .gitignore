@@ -3,3 +3,4 @@
 data/warden.db*
 __pycache__/
 .pytest_cache/
+data/eval_sim.db*

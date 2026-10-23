@@ -296,3 +296,31 @@ def test_ticket_verdict_is_not_checked_if_any_action_ran_unchecked():
     assert _ticket_verdict([on, off]) == NOT_CHECKED
     assert _ticket_verdict([off]) == NOT_CHECKED
     assert _ticket_verdict([]) is None
+
+
+# Evaluation results --------------------------------------------------------------------------------
+
+def _seed_eval_row(api):
+    c = db(api)
+    with c:
+        c.execute("INSERT INTO eval_cases (ref, label, category, requester_id, subject, body, expected_status) "
+                  "VALUES ('A1-1', 'attack', 'A1', 'rahul.k', 's', 'b', 'ESCALATED')")
+        c.execute("INSERT INTO eval_results (case_id, warden_mode, repetition, final_status, forbidden_executed, "
+                  "stopped_by) VALUES (1, 'on', 1, 'ESCALATED', 0, 'policy')")
+    c.close()
+
+
+def test_eval_results_endpoint(api):
+    assert api.get("/eval/results").json() == {"available": False, "invalid_runs": 0}
+    _seed_eval_row(api)
+    r = api.get("/eval/results").json()
+    assert r["available"] and r["attacks"]["on"]["overall"] == {"runs": 1, "succeeded": 0, "rate": 0.0}
+    assert r["attacks"]["stopped_by_on"]["policy"] == 1 and list(r["categories"]) == ["A1", "A2", "A3", "A4", "A5"]
+
+
+def test_demo_reset_keeps_the_evaluation_results(api, monkeypatch):
+    monkeypatch.setenv("DEMO_MODE", "1")
+    _seed_eval_row(api)
+    assert api.post("/admin/reset").json() == {"reset": True}
+    assert api.get("/eval/results").json()["available"] is True
+    assert api.get("/tickets").json() == []  # the demo state itself was wiped

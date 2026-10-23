@@ -13,6 +13,8 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import errors, types
 
+from app import replay
+
 load_dotenv()
 
 RETRY_CODES = {429, 503}
@@ -42,8 +44,44 @@ def _http_options(timeout_s):
 
 
 def _call(model, contents, config, timeout_s):
+    """The one place a request leaves the process (or is answered from the replay cache)."""
+    if replay.mode() == "play":
+        return replay.lookup(model, contents, config)  # never touches the network
+    global _last_call_end
     client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"), http_options=_http_options(timeout_s))
-    return client.models.generate_content(model=model, contents=contents, config=config)
+    try:
+        response = client.models.generate_content(model=model, contents=contents, config=config)
+    finally:
+        _last_call_end = _now()
+    if replay.mode() == "record":
+        replay.store(model, contents, config, response)
+    return response
+
+
+# Spacing between real calls, for the free tier's rate limits. Off by default; the evaluation turns it on.
+_min_interval_s = 0.0
+_last_call_end = 0.0
+_waited_s = 0.0  # total time spent waiting for a slot, so callers can subtract it from their timings
+
+
+def set_min_interval(seconds):
+    global _min_interval_s
+    _min_interval_s = max(0.0, float(seconds))
+
+
+def _wait_for_slot():
+    """Sleep until min_interval has passed since the last real call. Not counted in any time budget."""
+    if _min_interval_s <= 0 or replay.mode() == "play":
+        return
+    global _waited_s
+    wait = _min_interval_s - (_now() - _last_call_end)
+    if wait > 0:
+        _waited_s += wait
+        time.sleep(wait)
+
+
+def waited_seconds():
+    return _waited_s
 
 
 def _retryable(e):
@@ -75,6 +113,7 @@ def generate(contents, system_instruction, function_declarations, model=None, ti
         automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
     )
 
+    _wait_for_slot()
     deadline = None if max_total_s is None else _now() + max_total_s
 
     def remaining():
