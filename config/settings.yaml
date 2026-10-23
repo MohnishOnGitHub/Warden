@@ -10,3 +10,8 @@ judge_timeout_seconds: 10
 
 # Approver used when the judge (or an unavailable judge) sends an ALLOWed action to approval.
 fallback_approver: sam.t
+
+# How long an approval request stays open before it expires and the ticket is escalated.
+# DEMO_MODE=1 uses the shorter demo value.
+approval_ttl_minutes: 10
+approval_ttl_minutes_demo: 2

@@ -9,6 +9,8 @@ import os
 import time
 from dataclasses import replace
 
+from app.actions import set_action as _set_action
+from app.approvals import create_approval
 from app.audit import log_event
 from app.models import ActionStatus, Decision
 from app.tools import execute_tool, redact
@@ -20,13 +22,7 @@ BLOCKED_REASON = "This action is not permitted."
 FAILED_REASON = "The action could not be completed."
 # Judge reasons can echo ticket text, so the agent only ever gets this generic line.
 JUDGE_BLOCKED_REASON = "This action was flagged as risky and was not run."
-
-# Columns _set_action may write. Fixed list, so no SQL text ever comes from outside.
-ACTION_COLUMNS = {
-    "policy_verdict", "policy_rule_ids", "policy_reason", "final_verdict", "status", "latency_ms",
-    "judge_verdict", "judge_risk_score", "judge_reason", "judge_indicators_json",
-}
-
+NO_APPROVER_REASON = "No approver is available for this request. It has been passed to a human."
 
 def warden_mode():
     """'off' only when WARDEN_MODE is exactly 'off' (the baseline). Anything else is 'on'."""
@@ -41,13 +37,6 @@ def coerce_args(raw_args):
         k: int(v) if isinstance(v, float) and v.is_integer() else v
         for k, v in raw_args.items()
     }
-
-
-def _set_action(conn, action_id, **cols):
-    assert set(cols) <= ACTION_COLUMNS
-    sets = ", ".join(f"{c} = ?" for c in cols)
-    with conn:
-        conn.execute(f"UPDATE actions SET {sets} WHERE action_id = ?", (*cols.values(), action_id))
 
 
 def _flag_ticket(conn, ticket_id):
@@ -81,20 +70,22 @@ def _run_tool(conn, ticket_id, action_id, tool_name, args, obligations, started)
 
 def _run_judge(conn, ticket_id, action_id, tool_name, args, policy):
     """Ask the judge and record what happened. Returns (JudgeOutput or None, judge_state)."""
+    judge_started = time.perf_counter()
     try:
         out = judge_action(conn, ticket_id, tool_name, args, policy)
     except JudgeUnavailable as e:
-        _set_action(conn, action_id, judge_reason="Judge unavailable")
+        _set_action(conn, action_id, judge_reason="Judge unavailable", judge_latency_ms=_elapsed_ms(judge_started))
         log_event(conn, "judge_unavailable", "judge", ticket_id, {"action_id": action_id, "error": str(e)})
         return None, "unavailable"
     except JudgeInvalid as e:
-        _set_action(conn, action_id, judge_reason=f"Judge output invalid ({e.kind})")
+        _set_action(conn, action_id, judge_reason=f"Judge output invalid ({e.kind})",
+                    judge_latency_ms=_elapsed_ms(judge_started))
         log_event(conn, "judge_invalid", "judge", ticket_id, {"action_id": action_id, "kind": e.kind})
         return None, "invalid"
     _set_action(
         conn, action_id,
         judge_verdict=out.verdict, judge_risk_score=out.risk_score, judge_reason=out.reason,
-        judge_indicators_json=json.dumps(out.indicators),
+        judge_indicators_json=json.dumps(out.indicators), judge_latency_ms=_elapsed_ms(judge_started),
     )
     log_event(conn, "judge_decision", "judge", ticket_id, {
         "action_id": action_id, "verdict": out.verdict, "risk_score": out.risk_score,
@@ -124,6 +115,7 @@ def _handle(conn, ticket_id, requester_id, tool_name, raw_args, started):
     _set_action(
         conn, action_id,
         policy_verdict=policy.verdict, policy_rule_ids=",".join(policy.rule_ids), policy_reason=policy.reason,
+        obligations_json=json.dumps(policy.obligations),
     )
     log_event(conn, "policy_decision", "warden", ticket_id, {
         "action_id": action_id, "verdict": policy.verdict, "rule_id": policy.rule_id,
@@ -134,7 +126,7 @@ def _handle(conn, ticket_id, requester_id, tool_name, raw_args, started):
     if policy.needs_judge:
         judge_out, judge_state = _run_judge(conn, ticket_id, action_id, tool_name, args, policy)
     final = combine(policy, judge_out, judge_state)
-    _set_action(conn, action_id, final_verdict=final.verdict)
+    _set_action(conn, action_id, final_verdict=final.verdict, decided_by=final.decided_by)
 
     judge_info = None if judge_out is None else {
         "verdict": judge_out.verdict, "risk_score": judge_out.risk_score,
@@ -152,16 +144,17 @@ def _handle(conn, ticket_id, requester_id, tool_name, raw_args, started):
         return Decision("blocked", tool_name, reason=reason, **internal)
 
     if final.verdict == REQUIRE_APPROVAL:
+        created = create_approval(conn, action_id, ticket_id, requester_id, final.approver_id)
+        if created is None:
+            # Nobody eligible to approve: recorded as DENIED and escalated by create_approval. An org gap, not an attack.
+            _set_action(conn, action_id, latency_ms=_elapsed_ms(started))
+            return Decision("blocked", tool_name, reason=NO_APPROVER_REASON,
+                            **{**internal, "decided_by": "no_eligible_approver", "approver_id": None})
         _set_action(conn, action_id, status=ActionStatus.PENDING_APPROVAL.value, latency_ms=_elapsed_ms(started))
-        with conn:
-            conn.execute(
-                "UPDATE tickets SET status = 'PENDING_APPROVAL', updated_at = datetime('now') WHERE ticket_id = ?",
-                (ticket_id,))
-        # The approvals row (with expiry) is created in milestone 6 from this event and the actions row.
         log_event(conn, "approval_requested", "warden", ticket_id, {
-            "action_id": action_id, "tool": tool_name, "approver_id": final.approver_id,
-            "decided_by": final.decided_by})
-        return Decision("pending_approval", tool_name, **internal)
+            "action_id": action_id, "tool": tool_name, "approval_id": created.approval_id,
+            "approver_id": created.approver_id, "decided_by": final.decided_by})
+        return Decision("pending_approval", tool_name, **{**internal, "approver_id": created.approver_id})
 
     if final.verdict == ALLOW:
         decision = _run_tool(conn, ticket_id, action_id, tool_name, args, policy.obligations, started)

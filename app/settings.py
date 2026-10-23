@@ -19,6 +19,8 @@ class Settings:
     judge_approval_score: int
     judge_timeout_seconds: float
     fallback_approver: str
+    approval_ttl_minutes: int
+    approval_ttl_minutes_demo: int
 
 
 def load_settings(path=SETTINGS_PATH):
@@ -34,14 +36,18 @@ def load_settings(path=SETTINGS_PATH):
             judge_approval_score=raw["judge_approval_score"],
             judge_timeout_seconds=float(raw["judge_timeout_seconds"]),
             fallback_approver=raw["fallback_approver"],
+            approval_ttl_minutes=raw["approval_ttl_minutes"],
+            approval_ttl_minutes_demo=raw["approval_ttl_minutes_demo"],
         )
     except (KeyError, TypeError, ValueError) as e:
         raise SettingsError(f"Bad settings: {e!r}") from e
 
-    for name in ("judge_block_score", "judge_approval_score"):
+    for name in ("judge_block_score", "judge_approval_score", "approval_ttl_minutes", "approval_ttl_minutes_demo"):
         value = getattr(s, name)
         if isinstance(value, bool) or not isinstance(value, int):
             raise SettingsError(f"{name} must be an integer")
+    if s.approval_ttl_minutes < 1 or s.approval_ttl_minutes_demo < 1:
+        raise SettingsError("approval TTLs must be at least 1 minute")
     if not 0 < s.judge_approval_score < s.judge_block_score <= 100:
         raise SettingsError("Need 0 < judge_approval_score < judge_block_score <= 100")
     if s.judge_timeout_seconds <= 0:

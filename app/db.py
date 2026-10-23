@@ -93,7 +93,10 @@ CREATE TABLE actions (
     judge_risk_score        INTEGER CHECK (judge_risk_score BETWEEN 0 AND 100),
     judge_reason            TEXT,
     judge_indicators_json   TEXT,
-    final_verdict           TEXT CHECK (final_verdict IN ('ALLOW','REQUIRE_APPROVAL','BLOCK')),
+    judge_latency_ms        INTEGER,
+    obligations_json        TEXT,     -- policy obligations (e.g. redact), replayed when an approval runs
+    decided_by              TEXT,     -- policy | judge | judge_unavailable | judge_invalid | no_eligible_approver
+    final_verdict          TEXT CHECK (final_verdict IN ('ALLOW','REQUIRE_APPROVAL','BLOCK')),
     status                  TEXT NOT NULL DEFAULT 'PROPOSED',
     latency_ms              INTEGER,
     warden_mode             TEXT NOT NULL DEFAULT 'on' CHECK (warden_mode IN ('on','off')),

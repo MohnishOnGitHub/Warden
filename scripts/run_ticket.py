@@ -49,6 +49,10 @@ def main():
         ).fetchone()
         print(f"\nFinal: {row['status']}  security_flag={row['security_flag']}")
         print(f"Note: {row['resolution_note']}")
+        for a in conn.execute("SELECT approval_id, approver_id, expires_at FROM approvals "
+                              "WHERE ticket_id = ? AND status = 'PENDING'", (ticket_id,)):
+            print(f"Pending approval #{a['approval_id']} from {a['approver_id']} (expires {a['expires_at']} UTC)")
+            print(f"  decide with: python scripts/approvals_cli.py approve {a['approval_id']} --as {a['approver_id']}")
     finally:
         conn.close()
 

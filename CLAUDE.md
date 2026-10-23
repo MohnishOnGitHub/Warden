@@ -97,7 +97,9 @@ Max 8 steps. One tool call at a time through warden.handle(). Agent sees only {e
 
 ## Approvals
 
-Approve runs the stored call with stored args exactly once (conditional UPDATE where status is PENDING and not expired). Deny or expiry escalates the ticket. Requester can never approve their own action.
+Approve runs the stored call (tool, args and obligations from the `actions` row) exactly once, with no re-evaluation. The gate is a conditional UPDATE on the approvals row (status PENDING, not expired, approver is the named approver and not the requester); only the call that wins it executes. Success: action APPROVED_EXECUTED, ticket RESOLVED with a templated note. Tool failure: action FAILED, ticket ESCALATED. Deny or expiry: action DENIED or EXPIRED, ticket ESCALATED, no security flag. A holding note ("Your request needs approval from <name>; we'll update you.") is written when the approval is created. `expires_at` is now plus `approval_ttl_minutes` (10, or `approval_ttl_minutes_demo` = 2 when `DEMO_MODE=1`) from `config/settings.yaml`. Expiry is lazy: `expire_overdue()` runs from the CLI and from `approve`/`deny` on an overdue row.
+
+The requester can never approve their own action, and approve() rejects them independently of whatever the verdict named. If the verdict's approver is the requester, `fallback_approver` is used. If no eligible approver exists (the fallback is also the requester), the action is recorded DENIED with `decided_by = no_eligible_approver` and the ticket is ESCALATED with a note. That is an org gap, not an attack, so the security flag is not set. Rejected approval attempts are audited as `approval_rejected`.
 
 ## Build milestones (do one at a time)
 

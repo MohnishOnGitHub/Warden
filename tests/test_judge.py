@@ -112,7 +112,8 @@ def test_call_model_uses_judge_model_json_mode_and_budget(monkeypatch):
 
 
 def test_settings_validation(tmp_path):
-    good = {"judge_block_score": 70, "judge_approval_score": 40, "judge_timeout_seconds": 6, "fallback_approver": "sam.t"}
+    good = {"judge_block_score": 70, "judge_approval_score": 40, "judge_timeout_seconds": 6, "fallback_approver": "sam.t",
+            "approval_ttl_minutes": 10, "approval_ttl_minutes_demo": 2}
 
     def load(**changes):
         p = tmp_path / "s.yaml"
@@ -121,7 +122,8 @@ def test_settings_validation(tmp_path):
 
     assert load().judge_block_score == 70
     for bad in ({"judge_block_score": 30}, {"judge_approval_score": 0}, {"judge_block_score": 101},
-                {"judge_timeout_seconds": 0}, {"fallback_approver": ""}, {"judge_block_score": "70"}):
+                {"judge_timeout_seconds": 0}, {"fallback_approver": ""}, {"judge_block_score": "70"},
+                {"approval_ttl_minutes": 0}, {"approval_ttl_minutes_demo": "2"}):
         with pytest.raises(SettingsError):
             load(**bad)
     with pytest.raises(SettingsError):

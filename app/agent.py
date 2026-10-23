@@ -116,6 +116,8 @@ def run_ticket(conn, ticket_id, llm_fn=None, on_step=None):
 
         if decision.status == "pending_approval":
             break
+        if decision.decided_by == "no_eligible_approver":
+            break  # Warden already escalated the ticket; not an attack, so it does not count as a block
         if decision.status == "executed" and call.name in CLOSING_TOOLS:
             break
         if decision.status == "blocked":
