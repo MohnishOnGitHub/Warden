@@ -1,6 +1,9 @@
-"""Shared types. Pydantic models for the API arrive in milestone 7."""
+"""Shared types: action statuses, the Decision handed back by Warden, and the API request bodies."""
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ActionStatus(StrEnum):
@@ -39,3 +42,24 @@ class Decision:
         if self.status == "pending_approval":
             return {"status": "pending_approval"}
         return {"status": "blocked", "reason": self.reason}
+
+
+# API request bodies (milestone 7). Extra fields are rejected, so a client cannot smuggle in anything.
+
+class RequestBase(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class TicketCreate(RequestBase):
+    requester_id: str = Field(min_length=1, max_length=64)
+    subject: str = Field(min_length=1, max_length=200)
+    body: str = Field(min_length=1, max_length=10000)
+
+
+class ApprovalDecision(RequestBase):
+    approver_id: str = Field(min_length=1, max_length=64)
+    comment: str | None = Field(default=None, max_length=500)
+
+
+class WardenModeBody(RequestBase):
+    mode: Literal["on", "off"]

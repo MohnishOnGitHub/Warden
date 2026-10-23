@@ -15,3 +15,9 @@ fallback_approver: sam.t
 # DEMO_MODE=1 uses the shorter demo value.
 approval_ttl_minutes: 10
 approval_ttl_minutes_demo: 2
+
+# API: how often overdue approvals are expired, how long a Gemini health check is reused
+# (the dashboard polls every 2 seconds), and how many agent runs may use the LLM at once.
+expiry_sweep_seconds: 10
+health_cache_seconds: 60
+max_concurrent_agents: 2

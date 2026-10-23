@@ -100,3 +100,15 @@ def generate(contents, system_instruction, function_declarations, model=None, ti
                         pause = min(pause, max(left, 0))
                     time.sleep(pause)
     raise LLMError(f"All models failed: {type(last_error).__name__}") from last_error
+
+
+def ping(timeout_s=10.0):
+    """Is Gemini reachable with our key? Fetches model metadata: no generation, so almost no quota."""
+    model = os.getenv("AGENT_MODEL")
+    if not model or not os.getenv("GEMINI_API_KEY"):
+        raise LLMError("GEMINI_API_KEY or AGENT_MODEL is not set")
+    try:
+        client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"), http_options=_http_options(timeout_s))
+        client.models.get(model=model)
+    except Exception as e:
+        raise LLMError(type(e).__name__) from e

@@ -21,6 +21,9 @@ class Settings:
     fallback_approver: str
     approval_ttl_minutes: int
     approval_ttl_minutes_demo: int
+    expiry_sweep_seconds: int
+    health_cache_seconds: int
+    max_concurrent_agents: int
 
 
 def load_settings(path=SETTINGS_PATH):
@@ -38,6 +41,9 @@ def load_settings(path=SETTINGS_PATH):
             fallback_approver=raw["fallback_approver"],
             approval_ttl_minutes=raw["approval_ttl_minutes"],
             approval_ttl_minutes_demo=raw["approval_ttl_minutes_demo"],
+            expiry_sweep_seconds=raw["expiry_sweep_seconds"],
+            health_cache_seconds=raw["health_cache_seconds"],
+            max_concurrent_agents=raw["max_concurrent_agents"],
         )
     except (KeyError, TypeError, ValueError) as e:
         raise SettingsError(f"Bad settings: {e!r}") from e
@@ -48,6 +54,10 @@ def load_settings(path=SETTINGS_PATH):
             raise SettingsError(f"{name} must be an integer")
     if s.approval_ttl_minutes < 1 or s.approval_ttl_minutes_demo < 1:
         raise SettingsError("approval TTLs must be at least 1 minute")
+    for name in ("expiry_sweep_seconds", "health_cache_seconds", "max_concurrent_agents"):
+        value = getattr(s, name)
+        if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+            raise SettingsError(f"{name} must be a whole number of at least 1")
     if not 0 < s.judge_approval_score < s.judge_block_score <= 100:
         raise SettingsError("Need 0 < judge_approval_score < judge_block_score <= 100")
     if s.judge_timeout_seconds <= 0:

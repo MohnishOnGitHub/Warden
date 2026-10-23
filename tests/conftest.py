@@ -4,7 +4,7 @@ import pytest
 
 from app.db import ROOT, create_schema, get_connection
 from app.warden import judge
-from scripts.reset_db import load_seed
+from app.seed import load_seed
 
 
 def judge_reply(verdict="ALLOW", risk_score=5, reason="Looks fine.", indicators=()):
