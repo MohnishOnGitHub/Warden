@@ -130,3 +130,14 @@ def test_settings_validation(tmp_path):
             load(**bad)
     with pytest.raises(SettingsError):
         load_settings(tmp_path / "missing.yaml")
+
+
+def test_prompt_does_not_depend_on_the_order_of_the_arguments(conn):
+    """The model returns arguments in arbitrary order; the same call must give the same prompt (and cache key)."""
+    from app.ingestion import build_envelope
+    env = build_envelope(conn, "T1001")
+    pol = policy_for(conn, "unlock_account", {"user_id": "priya.s"})
+    a = build_judge_prompt(env, "install_software", {"package": "vscode", "device_id": "LT1042"}, pol)
+    b = build_judge_prompt(env, "install_software", {"device_id": "LT1042", "package": "vscode"}, pol)
+    assert a == b
+    assert '{"tool": "install_software", "arguments": {"device_id": "LT1042", "package": "vscode"}}' in a

@@ -73,7 +73,10 @@ Answer with one JSON object and nothing else, with exactly these fields:
 def build_judge_prompt(env, tool_name, args, policy):
     """The user turn for the judge: trusted facts, the action, the policy result, hints, then the ticket."""
     r = env.requester
-    action = escape_text(json.dumps({"tool": tool_name, "arguments": args}, default=str))
+    # Arguments are sorted: the model returns them in arbitrary order, and the same call must always give the
+    # same prompt (it is also the replay cache key). Nothing else in the prompt depends on that order.
+    ordered = dict(sorted(args.items())) if isinstance(args, dict) else args
+    action = escape_text(json.dumps({"tool": tool_name, "arguments": ordered}, default=str))
     return (
         "Trusted requester facts (from the company directory):\n"
         f"user_id: {r['user_id']}, name: {r['name']}, role: {r['role']}, department: {r['department']}, "
