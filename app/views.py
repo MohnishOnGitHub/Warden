@@ -9,6 +9,9 @@ import json
 from app.warden.policy import SEVERITY
 
 TERMINAL = ("RESOLVED", "ESCALATED")
+# What an action that ran with Warden off shows as its verdict. The database stores ALLOW for those
+# (nothing was checked, so nothing was refused), but showing ALLOW would claim a check that never happened.
+NOT_CHECKED = "NOT_CHECKED"
 EXECUTED_STATUSES = ("EXECUTED", "APPROVED_EXECUTED")
 
 DESCRIPTIONS = {
@@ -48,6 +51,13 @@ def _worst_verdict(verdicts):
     return max(verdicts, key=lambda v: SEVERITY[v]) if verdicts else None
 
 
+def _ticket_verdict(actions):
+    """Worst verdict on the ticket, or NOT_CHECKED if any action ran with Warden off."""
+    if any(a["warden_mode"] == "off" for a in actions):
+        return NOT_CHECKED
+    return _worst_verdict(a["final_verdict"] for a in actions)
+
+
 def _action_reason(a):
     """The one-line reason for the final verdict. Judge reasons are untrusted text."""
     by = a["decided_by"]
@@ -81,7 +91,7 @@ def list_tickets(conn, limit=200):
         out.append({
             **dict(t),
             "security_flag": bool(t["security_flag"]),
-            "verdict": _worst_verdict(a["final_verdict"] for a in acts),
+            "verdict": _ticket_verdict(acts),
             "action_count": len(acts),
             "warden_mode": acts[-1]["warden_mode"] if acts else None,
             "pending_approval_id": pending.get(t["ticket_id"]),
@@ -141,7 +151,8 @@ def ticket_detail(conn, ticket_id):
             "judge_verdict": a["judge_verdict"], "judge_risk_score": a["judge_risk_score"],
             "judge_reason": a["judge_reason"], "judge_indicators": _loads(a["judge_indicators_json"], []),
             "judge_latency_ms": a["judge_latency_ms"],
-            "final_verdict": a["final_verdict"], "reason": _action_reason(a),
+            "final_verdict": NOT_CHECKED if a["warden_mode"] == "off" else a["final_verdict"],
+            "reason": _action_reason(a),
             "latency_ms": a["latency_ms"], "created_at": a["created_at"],
         })
     events = [{"id": e["id"], "ts": e["ts"], "event_type": e["event_type"], "actor": e["actor"],

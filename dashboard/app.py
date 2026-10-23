@@ -40,8 +40,10 @@ def sidebar():
     except api_client.ApiError:
         health = None
     demo = bool(health and health["demo_mode"])
-    st.session_state["warden_toggle"] = bool(health) and health["warden_mode"] == "on"
-    st.sidebar.toggle("Warden on", key="warden_toggle", on_change=set_warden_mode, disabled=not demo,
+    on = bool(health) and health["warden_mode"] == "on"
+    st.session_state["warden_toggle"] = on
+    label = "Warden protection: UNKNOWN" if health is None else f"Warden protection: {'ON' if on else 'OFF'}"
+    st.sidebar.toggle(label, key="warden_toggle", on_change=set_warden_mode, disabled=not demo,
                       help="Off runs every tool call with no checks (the baseline). Needs DEMO_MODE=1.")
     error = st.session_state.pop("sidebar_error", None)
     if error:

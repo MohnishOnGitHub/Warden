@@ -1,0 +1,7 @@
+# Streamlit reads this when started from the repo root:  streamlit run dashboard/app.py
+[theme]
+# Default is 16. A bit larger so the dashboard reads on a projector.
+baseFontSize = 18
+
+[browser]
+gatherUsageStats = false

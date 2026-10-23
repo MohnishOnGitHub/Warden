@@ -20,6 +20,8 @@ VERDICT_STYLE = {
     "REQUIRE_APPROVAL": {"color": "orange", "icon": ":material/hourglass_top:", "hex": "#fab219",
                          "bg": "#fdeec4", "fg": "#6b4a00"},
     "BLOCK": {"color": "red", "icon": ":material/block:", "hex": "#d03b3b", "bg": "#f7d4d4", "fg": "#8a1f1f"},
+    # Warden was off, so no verdict exists. Grey on purpose: it must never look like ALLOW.
+    "NOT_CHECKED": {"color": "gray", "icon": ":material/help:", "hex": "#8a8a8a", "bg": "#e6e6e6", "fg": "#444444"},
 }
 STATUS_STYLE = {
     "NEW": ("#e6e6e6", "#444444"), "IN_PROGRESS": ("#d9e8fb", "#1d4a85"),
@@ -47,6 +49,10 @@ def verdict_badge(verdict, label=None):
         st.badge(label or "none", color="gray")
     else:
         st.badge(label or verdict.replace("_", " "), color=style["color"], icon=style["icon"])
+
+
+def verdict_label(verdict):
+    return (verdict or "").replace("_", " ")
 
 
 def _cell(bg_fg):
@@ -80,12 +86,21 @@ def api_client_get_quiet(path, **params):
 
 # Banner and sidebar status ----------------------------------------------------------
 
+BANNER_TEXT = "WARDEN OFF: agent actions run unchecked"
+# Constant markup, no data in it. (Everything that can echo ticket text avoids markdown: see the module docstring.)
+BANNER_HTML = (
+    '<div style="background:#c01f1f;color:#ffffff;width:100%;text-align:center;font-weight:800;'
+    'font-size:2.2rem;line-height:1.2;letter-spacing:0.04em;padding:0.9rem 1rem;border-radius:0.4rem;'
+    f'margin-bottom:1rem;">{BANNER_TEXT}</div>'
+)
+
+
 @st.fragment(run_every=REFRESH_SECONDS)
 def warden_banner():
+    """Full width red banner at the top of every page while Warden is off."""
     health = api_client_get_quiet("/health")
     if health and health["warden_mode"] == "off":
-        st.error("## WARDEN IS OFF\nEvery tool call the agent proposes will run with no policy and no judge. "
-                 "Use this only for the baseline comparison.")
+        st.markdown(BANNER_HTML, unsafe_allow_html=True)
 
 
 @st.fragment(run_every=REFRESH_SECONDS)
@@ -154,7 +169,7 @@ def ticket_table():
         "Actions": t["action_count"], "Warden": (t["warden_mode"] or "").upper(), "Updated": t["updated_at"],
     } for t in tickets])
     styled = (df.style.map(style_status, subset=["Status"]).map(style_verdict, subset=["Verdict"])
-              .map(style_flag, subset=["Security"]))
+              .map(style_flag, subset=["Security"]).format({"Verdict": verdict_label}))
     st.dataframe(styled, hide_index=True, width="stretch")
     left, right = st.columns([4, 1], vertical_alignment="bottom")
     pick = left.selectbox("Inspect ticket", [t["ticket_id"] for t in tickets], key="live_pick")

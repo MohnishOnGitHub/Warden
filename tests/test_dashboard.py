@@ -7,6 +7,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from dashboard import api_client
+from dashboard.pages import PAGES, style_verdict, verdict_label
 from dashboard.demo_tickets import DEMO_BY_LABEL, DEMO_TICKETS
 
 APP_PATH = str(Path(__file__).resolve().parent.parent / "dashboard" / "app.py")
@@ -143,11 +144,61 @@ def test_live_feed_renders_table_and_form(fake):
     assert not at.error  # no banner while Warden is on
 
 
-def test_banner_when_warden_is_off(fake):
+BANNER = "WARDEN OFF: agent actions run unchecked"
+
+
+@pytest.mark.parametrize("page", list(PAGES))
+def test_red_banner_on_every_page_when_warden_is_off(fake, page):
+    fake.data["/health"] = {**HEALTH, "warden_mode": "off"}
+    at = run(page)
+    assert BANNER in markdown(at)
+    banner = next(m.value for m in at.markdown if BANNER in m.value)
+    assert "width:100%" in banner and "#c01f1f" in banner  # full width, red
+
+
+@pytest.mark.parametrize("page", list(PAGES))
+def test_no_banner_while_warden_is_on(fake, page):
+    assert BANNER not in markdown(run(page))
+
+
+def test_toggle_label_shows_the_current_state(fake):
+    assert run().sidebar.toggle(key="warden_toggle").label == "Warden protection: ON"
     fake.data["/health"] = {**HEALTH, "warden_mode": "off"}
     at = run()
-    assert any("WARDEN IS OFF" in e.value for e in at.error)
-    assert at.sidebar.toggle(key="warden_toggle").value is False
+    toggle = at.sidebar.toggle(key="warden_toggle")
+    assert toggle.label == "Warden protection: OFF" and toggle.value is False
+
+
+def test_toggle_label_when_api_is_down(fake):
+    fake.data["/health"] = api_client.ApiError("down")
+    assert run().sidebar.toggle(key="warden_toggle").label == "Warden protection: UNKNOWN"
+
+
+def test_unchecked_tickets_show_not_checked_never_allow(fake):
+    fake.data["/tickets"] = [{**TICKETS[0], "verdict": "NOT_CHECKED", "warden_mode": "off"}]
+    at = run()
+    assert list(at.dataframe[0].value["Verdict"]) == ["NOT_CHECKED"]
+    assert verdict_label("NOT_CHECKED") == "NOT CHECKED"
+    assert "ALLOW" not in style_verdict("NOT_CHECKED") and "e6e6e6" in style_verdict("NOT_CHECKED")  # grey, not green
+    assert style_verdict("ALLOW") != style_verdict("NOT_CHECKED")
+
+
+def test_unchecked_action_card_shows_not_checked(fake):
+    d = copy.deepcopy(DETAIL)
+    d["actions"] = [{**ACTION, "warden_mode": "off", "status": "EXECUTED", "policy_verdict": None, "policy_rule_ids": [],
+                     "policy_reason": None, "decided_by": None, "final_verdict": "NOT_CHECKED",
+                     "reason": "Warden was off: no checks ran."}]
+    fake.data["/tickets/T1002"] = d
+    at = run("Ticket detail")
+    md = markdown(at)
+    assert "NOT CHECKED" in md and "ALLOW" not in md
+    assert "Not run: Warden was off." in texts(at)
+
+
+def test_base_font_size_is_larger_than_streamlit_default():
+    import tomllib
+    config = tomllib.loads((Path(APP_PATH).parent.parent / ".streamlit" / "config.toml").read_text(encoding="utf-8"))
+    assert config["theme"]["baseFontSize"] > 16
 
 
 def test_api_down_shows_errors_not_a_crash(fake):

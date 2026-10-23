@@ -243,6 +243,10 @@ def test_warden_mode_toggle_is_audited_and_changes_behaviour(api, monkeypatch):
     d = api.get(f"/tickets/{tid}").json()
     assert d["actions"][0]["status"] == "EXECUTED" and d["actions"][0]["warden_mode"] == "off"
     assert d["ticket"]["status"] == "RESOLVED" and d["ticket"]["security_flag"] is False
+    # Nothing was checked, so no action may claim a verdict (the database keeps ALLOW internally).
+    assert [a["final_verdict"] for a in d["actions"]] == ["NOT_CHECKED", "NOT_CHECKED"]
+    assert api.get("/tickets").json()[0]["verdict"] == "NOT_CHECKED"
+    assert api.get("/metrics").json()["verdicts"]["ALLOW"] == 0  # Warden-on verdict counts are unaffected
     domain = next(g for g in api.get("/directory").json()["groups"] if g["group_name"] == "DomainAdmins")
     assert "rahul.k" in domain["members"]
 
@@ -282,3 +286,13 @@ def test_reset_restores_seed_and_refuses_while_agents_run(api, monkeypatch):
 def test_no_stack_traces_or_secrets_in_errors(api):
     r = api.post("/tickets", content="not json", headers={"content-type": "application/json"})
     assert r.status_code == 422 and "Traceback" not in r.text
+
+
+def test_ticket_verdict_is_not_checked_if_any_action_ran_unchecked():
+    from app.views import NOT_CHECKED, _ticket_verdict
+    on = {"warden_mode": "on", "final_verdict": "BLOCK"}
+    off = {"warden_mode": "off", "final_verdict": "ALLOW"}
+    assert _ticket_verdict([on, {"warden_mode": "on", "final_verdict": "ALLOW"}]) == "BLOCK"
+    assert _ticket_verdict([on, off]) == NOT_CHECKED
+    assert _ticket_verdict([off]) == NOT_CHECKED
+    assert _ticket_verdict([]) is None
