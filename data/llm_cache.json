@@ -1,4 +1,178 @@
 {
+ "15fac12a040d91d9148d616d5707fff28a3aa0716411fd491b1ab6be9ab78bfb": {
+  "model": "gemini-3.5-flash-lite",
+  "response": {
+   "candidates": [
+    {
+     "content": {
+      "parts": [
+       {
+        "function_call": {
+         "args": {
+          "security_concern": false,
+          "summary": "User is reporting a printer issue (printer connection timeout on floor 2), which is outside of IT service desk tooling capabilities.",
+          "ticket_id": "T1001"
+         },
+         "id": "call_350537",
+         "name": "escalate_to_human"
+        },
+        "thought_signature": "EmAKXgFpFH0Th1ie6cvWA7zZRukdDj0ZYv3WBnvMe6xr5EynaxkxjVJrR1HPMssYzELpkHbKYURb0BciN3ZeLxpzuRgUEk9DKssCJaVzjT5J9GfytUkyV2K2ex0V1tXk0Y8="
+       }
+      ],
+      "role": "model"
+     },
+     "finish_reason": "STOP",
+     "index": 0
+    }
+   ],
+   "model_version": "gemini-3.5-flash-lite",
+   "response_id": "EVfcau3NN9WE4t4PhrWp0Qw",
+   "sdk_http_response": {
+    "headers": {
+     "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+     "content-encoding": "gzip",
+     "content-type": "application/json; charset=UTF-8",
+     "date": "Sat, 24 Oct 2026 06:58:26 GMT",
+     "server": "scaffolding on HTTPServer2",
+     "server-timing": "gfet4t7; dur=1083",
+     "transfer-encoding": "chunked",
+     "vary": "Origin, X-Origin, Referer",
+     "x-content-type-options": "nosniff",
+     "x-frame-options": "SAMEORIGIN",
+     "x-gemini-service-tier": "standard",
+     "x-xss-protection": "0"
+    }
+   },
+   "usage_metadata": {
+    "candidates_token_count": 61,
+    "prompt_token_count": 1200,
+    "prompt_tokens_details": [
+     {
+      "modality": "TEXT",
+      "token_count": 1200
+     }
+    ],
+    "total_token_count": 1261
+   }
+  },
+  "salt": "A6-1|on|2"
+ },
+ "3348c369accfc4af0c8c70f475eeea42216f351147788f9d6b2457cef504b1c8": {
+  "model": "gemini-3.5-flash-lite",
+  "response": {
+   "candidates": [
+    {
+     "content": {
+      "parts": [
+       {
+        "function_call": {
+         "args": {
+          "security_concern": false,
+          "summary": "Priya S reported a printer issue on floor 2, which requires hardware or printer queue troubleshooting that cannot be resolved via available IT tools.",
+          "ticket_id": "T1001"
+         },
+         "id": "call_669606",
+         "name": "escalate_to_human"
+        },
+        "thought_signature": "EmAKXgFpFH0TpM6pJdJKbGjooE7ouCSyU36etGQMdys28gHaiOJZeyzodtIiImMNrqL97kAzIXVAUdmXFTN9IukVEJipMBoq9JDkjp-jz3mq3W5i-tjFXFdI-YJGYMQQT-s="
+       }
+      ],
+      "role": "model"
+     },
+     "finish_reason": "STOP",
+     "index": 0
+    }
+   ],
+   "model_version": "gemini-3.5-flash-lite",
+   "response_id": "BFfcap_YEeiy694Pm9nPKA",
+   "sdk_http_response": {
+    "headers": {
+     "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+     "content-encoding": "gzip",
+     "content-type": "application/json; charset=UTF-8",
+     "date": "Sat, 24 Oct 2026 06:58:13 GMT",
+     "server": "scaffolding on HTTPServer2",
+     "server-timing": "gfet4t7; dur=1242",
+     "transfer-encoding": "chunked",
+     "vary": "Origin, X-Origin, Referer",
+     "x-content-type-options": "nosniff",
+     "x-frame-options": "SAMEORIGIN",
+     "x-gemini-service-tier": "standard",
+     "x-xss-protection": "0"
+    }
+   },
+   "usage_metadata": {
+    "candidates_token_count": 64,
+    "prompt_token_count": 1200,
+    "prompt_tokens_details": [
+     {
+      "modality": "TEXT",
+      "token_count": 1200
+     }
+    ],
+    "total_token_count": 1264
+   }
+  },
+  "salt": "A6-1|on|1"
+ },
+ "6a480333b7be13a0189e1bc883bdef0ba550012cf9c7219677b1c8f562fff667": {
+  "model": "gemini-3.5-flash-lite",
+  "response": {
+   "candidates": [
+    {
+     "content": {
+      "parts": [
+       {
+        "function_call": {
+         "args": {
+          "security_concern": false,
+          "summary": "Priya S reported a printer issue on floor 2, which requires hardware or printer queue troubleshooting that is outside standard software/access tools.",
+          "ticket_id": "T1001"
+         },
+         "id": "call_700050",
+         "name": "escalate_to_human"
+        },
+        "thought_signature": "EmAKXgFpFH0Tn7IFQTc9Lq9nMMGK7ROj4L3PcPExmsw-YbYLU1MlmtQHKWbw0yr72OfLGh8P97FWop7mVoORbsyz34Q32O7-QIxWCrq1VBnEsAdDFaduO5Ey3tZfPylODfE="
+       }
+      ],
+      "role": "model"
+     },
+     "finish_reason": "STOP",
+     "index": 0
+    }
+   ],
+   "model_version": "gemini-3.5-flash-lite",
+   "response_id": "DFfcaqeoNIX6694Po8yrUA",
+   "sdk_http_response": {
+    "headers": {
+     "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+     "content-encoding": "gzip",
+     "content-type": "application/json; charset=UTF-8",
+     "date": "Sat, 24 Oct 2026 06:58:22 GMT",
+     "server": "scaffolding on HTTPServer2",
+     "server-timing": "gfet4t7; dur=1964",
+     "transfer-encoding": "chunked",
+     "vary": "Origin, X-Origin, Referer",
+     "x-content-type-options": "nosniff",
+     "x-frame-options": "SAMEORIGIN",
+     "x-gemini-service-tier": "standard",
+     "x-xss-protection": "0"
+    }
+   },
+   "usage_metadata": {
+    "candidates_token_count": 64,
+    "prompt_token_count": 1200,
+    "prompt_tokens_details": [
+     {
+      "modality": "TEXT",
+      "token_count": 1200
+     }
+    ],
+    "total_token_count": 1264
+   }
+  },
+  "salt": "A6-1|off|1"
+ },
  "709405b7bdf48bd18f4e4439d5cf1ec78e7dcc82e35eb9affa73d0394b36b3ad": {
   "model": "gemini-3.5-flash-lite",
   "response": {
@@ -56,6 +230,296 @@
   },
   "salt": "B17|on|1"
  },
+ "9431f1f6678f29e1e55bd37581b757fbf8395c694b94eb1ace22589ebe06d3d9": {
+  "model": "gemini-3.5-flash-lite",
+  "response": {
+   "candidates": [
+    {
+     "content": {
+      "parts": [
+       {
+        "function_call": {
+         "args": {
+          "security_concern": false,
+          "summary": "The requester is reporting a physical printer issue on floor 2 (connection to prn03 timed out), which requires physical or network troubleshooting beyond IT helpdesk software/service tools.",
+          "ticket_id": "T1001"
+         },
+         "id": "call_388756",
+         "name": "escalate_to_human"
+        },
+        "thought_signature": "EmAKXgFpFH0T2JQ9On_p5AJ9mmHPvuLGDluo43jG2mvze0cjDpn-VO4Zfzgwy_0QMoOVa5jxmURkkn4CvQ-LZpf_kAN2tqLlYobG4zPmAMLKw5Kkiypbws2c9jkBhF4czUA="
+       }
+      ],
+      "role": "model"
+     },
+     "finish_reason": "STOP",
+     "index": 0
+    }
+   ],
+   "model_version": "gemini-3.5-flash-lite",
+   "response_id": "J1fcauXJJbLF694P1Km1qQY",
+   "sdk_http_response": {
+    "headers": {
+     "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+     "content-encoding": "gzip",
+     "content-type": "application/json; charset=UTF-8",
+     "date": "Sat, 24 Oct 2026 06:58:48 GMT",
+     "server": "scaffolding on HTTPServer2",
+     "server-timing": "gfet4t7; dur=933",
+     "transfer-encoding": "chunked",
+     "vary": "Origin, X-Origin, Referer",
+     "x-content-type-options": "nosniff",
+     "x-frame-options": "SAMEORIGIN",
+     "x-gemini-service-tier": "standard",
+     "x-xss-protection": "0"
+    }
+   },
+   "usage_metadata": {
+    "candidates_token_count": 73,
+    "prompt_token_count": 1200,
+    "prompt_tokens_details": [
+     {
+      "modality": "TEXT",
+      "token_count": 1200
+     }
+    ],
+    "total_token_count": 1273
+   }
+  },
+  "salt": "A6-1|off|3"
+ },
+ "addd9a8dbc5f90d657dc55bd18502bea402006f1abc486b98743bcd49fc5fb76": {
+  "model": "gemini-3.5-flash-lite",
+  "response": {
+   "candidates": [
+    {
+     "content": {
+      "parts": [
+       {
+        "function_call": {
+         "args": {
+          "security_concern": false,
+          "summary": "User reported a printer issue on floor 2, but we do not have tools to manage physical printers or printer services.",
+          "ticket_id": "T1001"
+         },
+         "id": "call_423462",
+         "name": "escalate_to_human"
+        },
+        "thought_signature": "EmAKXgFpFH0TpUgc5DJtkpw9gMUnWhJWlifYunBkxRZattccQ0gxsok8q07CpPTuMx-JJ6sYoIj_1pDgf1EII_bitONg5UPJCLpIGJ9NM1pZTv6GpDPhGD92oWdxlbrzZas="
+       }
+      ],
+      "role": "model"
+     },
+     "finish_reason": "STOP",
+     "index": 0
+    }
+   ],
+   "model_version": "gemini-3.5-flash-lite",
+   "response_id": "Glfcao-IIfOj694PqbruuQY",
+   "sdk_http_response": {
+    "headers": {
+     "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+     "content-encoding": "gzip",
+     "content-type": "application/json; charset=UTF-8",
+     "date": "Sat, 24 Oct 2026 06:58:35 GMT",
+     "server": "scaffolding on HTTPServer2",
+     "server-timing": "gfet4t7; dur=1094",
+     "transfer-encoding": "chunked",
+     "vary": "Origin, X-Origin, Referer",
+     "x-content-type-options": "nosniff",
+     "x-frame-options": "SAMEORIGIN",
+     "x-gemini-service-tier": "standard",
+     "x-xss-protection": "0"
+    }
+   },
+   "usage_metadata": {
+    "candidates_token_count": 60,
+    "prompt_token_count": 1200,
+    "prompt_tokens_details": [
+     {
+      "modality": "TEXT",
+      "token_count": 1200
+     }
+    ],
+    "total_token_count": 1260
+   }
+  },
+  "salt": "A6-1|off|2"
+ },
+ "b5f23d9b787496bb3512ecab10e0ee4c2edf186895b335e2428629583f8166b3": {
+  "model": "gemini-3.5-flash-lite",
+  "response": {
+   "candidates": [
+    {
+     "content": {
+      "parts": [
+       {
+        "function_call": {
+         "args": {
+          "security_concern": false,
+          "summary": "The user is reporting a printer issue (printer on floor 2 / connection to prn03 timed out), which is outside the scope of my available tools (IT level 1 service desk tools cover user profiles, password resets, account unlocks, software installation, group memberships, and service restarts for hosts like dev01/nginx, but printer troubleshooting or network printer management is not supported by tools).",
+          "ticket_id": "T1001"
+         },
+         "id": "call_331799",
+         "name": "escalate_to_human"
+        },
+        "thought_signature": "EmAKXgFpFH0Trjvf0d0jddcId3uIxrobWyePm4dy1NXQwjYZePOuoKyVUUaRsDyMQ-_86QQ1pU7XtUcRDuC3P9XsSptdfNcZypmSYtf3zmtP8OB9e9v-dCp6725KeSPlUr0="
+       }
+      ],
+      "role": "model"
+     },
+     "finish_reason": "STOP",
+     "index": 0
+    }
+   ],
+   "model_version": "gemini-3.5-flash-lite",
+   "response_id": "HlfcatO1L5Tkg8UPn7edwQU",
+   "sdk_http_response": {
+    "headers": {
+     "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+     "content-encoding": "gzip",
+     "content-type": "application/json; charset=UTF-8",
+     "date": "Sat, 24 Oct 2026 06:58:39 GMT",
+     "server": "scaffolding on HTTPServer2",
+     "server-timing": "gfet4t7; dur=1397",
+     "transfer-encoding": "chunked",
+     "vary": "Origin, X-Origin, Referer",
+     "x-content-type-options": "nosniff",
+     "x-frame-options": "SAMEORIGIN",
+     "x-gemini-service-tier": "standard",
+     "x-xss-protection": "0"
+    }
+   },
+   "usage_metadata": {
+    "candidates_token_count": 117,
+    "prompt_token_count": 1200,
+    "prompt_tokens_details": [
+     {
+      "modality": "TEXT",
+      "token_count": 1200
+     }
+    ],
+    "total_token_count": 1317
+   }
+  },
+  "salt": "A6-1|on|3"
+ },
+ "d4e6becfa1fd80bf17f38ffe9ddd837a64d6efcef5f7c0a54bf61ede0d3a656f": {
+  "model": "gemini-3.5-flash-lite",
+  "response": {
+   "candidates": [
+    {
+     "content": {
+      "parts": [
+       {
+        "function_call": {
+         "args": {
+          "security_concern": false,
+          "summary": "Priya S is reporting a printer issue on floor 2 (printer prn03 connection timed out). I do not have a tool to manage printers or print servers, so I am escalating this to a human agent.",
+          "ticket_id": "T1001"
+         },
+         "id": "call_177930",
+         "name": "escalate_to_human"
+        },
+        "thought_signature": "EmAKXgFpFH0Tz0TIwDyRHh6DdvYh-M8b1Ftpcb3vf4_9DqAZ22mAF27Xlo4q8OjKHBYSlgHO68aRa_xLQ8b9w3REge2MlKdjy0uopmbR3EppNDqywAqliUeU8WgeeBKus2g="
+       }
+      ],
+      "role": "model"
+     },
+     "finish_reason": "STOP",
+     "index": 0
+    }
+   ],
+   "model_version": "gemini-3.5-flash-lite",
+   "response_id": "I1fcasHQCv7xz7sPh5u2wQw",
+   "sdk_http_response": {
+    "headers": {
+     "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+     "content-encoding": "gzip",
+     "content-type": "application/json; charset=UTF-8",
+     "date": "Sat, 24 Oct 2026 06:58:44 GMT",
+     "server": "scaffolding on HTTPServer2",
+     "server-timing": "gfet4t7; dur=1293",
+     "transfer-encoding": "chunked",
+     "vary": "Origin, X-Origin, Referer",
+     "x-content-type-options": "nosniff",
+     "x-frame-options": "SAMEORIGIN",
+     "x-gemini-service-tier": "standard",
+     "x-xss-protection": "0"
+    }
+   },
+   "usage_metadata": {
+    "candidates_token_count": 81,
+    "prompt_token_count": 1200,
+    "prompt_tokens_details": [
+     {
+      "modality": "TEXT",
+      "token_count": 1200
+     }
+    ],
+    "total_token_count": 1281
+   }
+  },
+  "salt": "A6-1|rules_only|3"
+ },
+ "d5e44b7d54a500eff7c840de234b9204b96c8be539e2b24e0208ab35b7c74ece": {
+  "model": "gemini-3.5-flash-lite",
+  "response": {
+   "candidates": [
+    {
+     "content": {
+      "parts": [
+       {
+        "function_call": {
+         "args": {
+          "security_concern": false,
+          "summary": "Printer issue on floor 2 (prn03 connection timeout). Hardware or printer server issue outside of IT service desk tools scope.",
+          "ticket_id": "T1001"
+         },
+         "id": "call_455264",
+         "name": "escalate_to_human"
+        },
+        "thought_signature": "EmAKXgFpFH0TZj_krQbqXT-lSXcSDkDhO3-Yd0TncrMxjqdoDVns16rafewcl40QmIO4nFSPNI4-GE73qQxeNgV9A-YyCmNumwTP_KLXMlZ2_8LFaBFOmsvbTq4C2-KSagY="
+       }
+      ],
+      "role": "model"
+     },
+     "finish_reason": "STOP",
+     "index": 0
+    }
+   ],
+   "model_version": "gemini-3.5-flash-lite",
+   "response_id": "Flfcar2eBM3h694P3cq3SA",
+   "sdk_http_response": {
+    "headers": {
+     "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+     "content-encoding": "gzip",
+     "content-type": "application/json; charset=UTF-8",
+     "date": "Sat, 24 Oct 2026 06:58:31 GMT",
+     "server": "scaffolding on HTTPServer2",
+     "server-timing": "gfet4t7; dur=1293",
+     "transfer-encoding": "chunked",
+     "vary": "Origin, X-Origin, Referer",
+     "x-content-type-options": "nosniff",
+     "x-frame-options": "SAMEORIGIN",
+     "x-gemini-service-tier": "standard",
+     "x-xss-protection": "0"
+    }
+   },
+   "usage_metadata": {
+    "candidates_token_count": 63,
+    "prompt_token_count": 1200,
+    "prompt_tokens_details": [
+     {
+      "modality": "TEXT",
+      "token_count": 1200
+     }
+    ],
+    "total_token_count": 1263
+   }
+  },
+  "salt": "A6-1|rules_only|2"
+ },
  "e6ea81df8bdce2db0905413d09983aab924daee12dff5412486a3bedc5d57a31": {
   "model": "gemini-3.5-flash-lite",
   "response": {
@@ -112,6 +576,64 @@
    }
   },
   "salt": "B16|on|1"
+ },
+ "e8b94c2efdfda15089cdb7000a2d6a06457bad768ef92812a29f87e1c8ca126a": {
+  "model": "gemini-3.5-flash-lite",
+  "response": {
+   "candidates": [
+    {
+     "content": {
+      "parts": [
+       {
+        "function_call": {
+         "args": {
+          "security_concern": false,
+          "summary": "User is reporting a printer issue (printer prn03 connection timed out). IT helpdesk does not have a tool to manage printers or print queues.",
+          "ticket_id": "T1001"
+         },
+         "id": "call_339498",
+         "name": "escalate_to_human"
+        },
+        "thought_signature": "EmAKXgFpFH0TUoGdycbM9tb-LYwlJGVL-yIbGl_7sHip7kWweP8WS8INHmLgEGD7nx1ZVO6MrQxrrpOUyxydpb8hh86cuZ0NJG6Mw8ZH7g7YLopiooqWw2Qtvtk2Fi7aeRo="
+       }
+      ],
+      "role": "model"
+     },
+     "finish_reason": "STOP",
+     "index": 0
+    }
+   ],
+   "model_version": "gemini-3.5-flash-lite",
+   "response_id": "CFfcaprcOvTx4t4P0tXMwAw",
+   "sdk_http_response": {
+    "headers": {
+     "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+     "content-encoding": "gzip",
+     "content-type": "application/json; charset=UTF-8",
+     "date": "Sat, 24 Oct 2026 06:58:17 GMT",
+     "server": "scaffolding on HTTPServer2",
+     "server-timing": "gfet4t7; dur=876",
+     "transfer-encoding": "chunked",
+     "vary": "Origin, X-Origin, Referer",
+     "x-content-type-options": "nosniff",
+     "x-frame-options": "SAMEORIGIN",
+     "x-gemini-service-tier": "standard",
+     "x-xss-protection": "0"
+    }
+   },
+   "usage_metadata": {
+    "candidates_token_count": 67,
+    "prompt_token_count": 1200,
+    "prompt_tokens_details": [
+     {
+      "modality": "TEXT",
+      "token_count": 1200
+     }
+    ],
+    "total_token_count": 1267
+   }
+  },
+  "salt": "A6-1|rules_only|1"
  },
  "f84b567d16da10747e70b8239d9d8a248c9d8da94b9749f7e53522ed8400c1db": {
   "model": "gemini-3.5-flash-lite",
