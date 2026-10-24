@@ -19,6 +19,11 @@ default:
   reason: No policy rule matched this action.
 
 rules:
+  - id: P005
+    tools: [create_account, assign_laptop, grant_app_access, schedule_orientation]
+    when: [is_counted_write, requester_write_limit_reached]
+    verdict: BLOCK
+    reason: Too many write actions from this requester recently.
   - id: H001
     tools: [create_account, assign_laptop, grant_app_access, schedule_orientation]
     when: [hr_candidate_missing]

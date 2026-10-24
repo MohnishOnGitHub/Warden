@@ -59,7 +59,7 @@ def events(c, kind):
 
 def test_policy_hr_loads_and_names_only_hr_tools(hrconn):
     policy = policy_for("create_account")
-    assert [r.id for r in policy.rules] == [f"H00{i}" for i in range(1, 8)]
+    assert [r.id for r in policy.rules] == ["P005"] + [f"H00{i}" for i in range(1, 8)]
     assert all(set(r.tools) <= HR_NAMES for r in policy.rules)
     assert policy.default.id == "P999" and policy.default.verdict == BLOCK
 
@@ -139,6 +139,23 @@ def test_missing_hr_tables_fail_closed(conn):
         check(ev(conn, "create_account", {"candidate_id": "C-101"}), BLOCK, "P999")
     finally:
         hr.unregister()
+
+
+def test_p005_applies_to_the_hr_write_tools_too(hrconn, monkeypatch):
+    import dataclasses
+    from app.warden import policy as policy_module
+    monkeypatch.setattr(policy_module, "SETTINGS",
+                        dataclasses.replace(policy_module.SETTINGS, max_writes_per_requester_per_hour=2))
+    with hrconn:
+        for i in range(2):
+            hrconn.execute("INSERT INTO tickets (ticket_id, requester_id, subject, body) VALUES (?, 'anita.d', 's', 'b')",
+                           (f"T20{i}",))
+            hrconn.execute("INSERT INTO actions (ticket_id, tool, args_json, status) VALUES (?, 'create_account', '{}', 'EXECUTED')",
+                           (f"T20{i}",))
+    result = ev(hrconn, "create_account", {"candidate_id": "C-101"})
+    check(result, BLOCK, "P005")
+    assert result.reason == "Too many write actions from this requester recently."
+    check(ev(hrconn, "create_account", {"candidate_id": "C-102"}, "vikram.r"), ALLOW, "H007")  # a different requester
 
 
 # The tools ---------------------------------------------------------------------------------------------

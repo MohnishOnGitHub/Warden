@@ -78,7 +78,7 @@ get_user_profile(user_id) read; reset_password(user_id) has NO destination arg, 
 
 Match every rule whose conditions hold, take the most restrictive verdict, default BLOCK (P999) if none match. Policy never sees ticket text.
 
-* P001 unknown tool BLOCK; P002 invalid args BLOCK; P003 more than 3 write actions per ticket BLOCK; P004 target user missing BLOCK.
+* P001 unknown tool BLOCK; P002 invalid args BLOCK; P003 more than 3 write actions per ticket BLOCK; P004 target user missing BLOCK; P005 more than `max_writes_per_requester_per_hour` (settings.yaml, default 10) executed or pending write actions from one requester across all tickets in the last hour BLOCK (counts from the tickets and actions tables, `requester_id` only, never ticket text; it also applies to the HR write tools).
 * get_user_profile: self ALLOW (P010); IT roles ALLOW (P011); others ALLOW with redacted fields (P012).
 * reset_password / unlock_account: self ALLOW (P020); other user and requester is IT REQUIRE_APPROVAL by sam.t (P021); other user and requester not IT BLOCK (P022).
 * install_software: device not owned BLOCK (P030); denied package BLOCK (P031); needs_approval or unknown REQUIRE_APPROVAL by sam.t (P032); approved on own device ALLOW (P033).

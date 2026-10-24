@@ -24,6 +24,7 @@ class Settings:
     expiry_sweep_seconds: int
     health_cache_seconds: int
     max_concurrent_agents: int
+    max_writes_per_requester_per_hour: int
 
 
 def load_settings(path=SETTINGS_PATH):
@@ -44,6 +45,7 @@ def load_settings(path=SETTINGS_PATH):
             expiry_sweep_seconds=raw["expiry_sweep_seconds"],
             health_cache_seconds=raw["health_cache_seconds"],
             max_concurrent_agents=raw["max_concurrent_agents"],
+            max_writes_per_requester_per_hour=raw.get("max_writes_per_requester_per_hour", 10),
         )
     except (KeyError, TypeError, ValueError) as e:
         raise SettingsError(f"Bad settings: {e!r}") from e
@@ -54,7 +56,8 @@ def load_settings(path=SETTINGS_PATH):
             raise SettingsError(f"{name} must be an integer")
     if s.approval_ttl_minutes < 1 or s.approval_ttl_minutes_demo < 1:
         raise SettingsError("approval TTLs must be at least 1 minute")
-    for name in ("expiry_sweep_seconds", "health_cache_seconds", "max_concurrent_agents"):
+    for name in ("expiry_sweep_seconds", "health_cache_seconds", "max_concurrent_agents",
+                 "max_writes_per_requester_per_hour"):
         value = getattr(s, name)
         if isinstance(value, bool) or not isinstance(value, int) or value < 1:
             raise SettingsError(f"{name} must be a whole number of at least 1")

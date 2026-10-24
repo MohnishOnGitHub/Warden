@@ -57,6 +57,11 @@ rules:
     when: [target_user_missing]
     verdict: BLOCK
     reason: Target user does not exist.
+  - id: P005
+    tools: "*"
+    when: [is_counted_write, requester_write_limit_reached]
+    verdict: BLOCK
+    reason: Too many write actions from this requester recently.
 
   # get_user_profile ----------------------------------------------------------
   - id: P010

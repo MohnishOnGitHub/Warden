@@ -54,7 +54,7 @@ def db(api):
 
 def test_health_reports_policy_db_gemini_and_modes(api):
     h = api.get("/health").json()
-    assert h["status"] == "ok" and h["db"] and h["policy_loaded"] and h["policy_rules"] == 24
+    assert h["status"] == "ok" and h["db"] and h["policy_loaded"] and h["policy_rules"] == 25
     assert h["gemini"] == {"reachable": True, "error": None}
     assert (h["warden_mode"], h["demo_mode"], h["running_agents"]) == ("on", False, 0)
 

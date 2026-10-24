@@ -14,6 +14,7 @@ from pydantic import ValidationError
 
 from app.db import ROOT
 from app.models import ActionStatus
+from app.settings import SETTINGS
 from app.tools import TOOLS
 
 POLICY_PATH = ROOT / "config" / "policy.yaml"
@@ -117,6 +118,20 @@ class Facts:
             self.ticket_id, *statuses, *counted, self.exclude_action_id)
         return row[0]
 
+    @cached_property
+    def requester_write_count(self):
+        """Write actions by this requester on any ticket in the last hour that were executed or are waiting for
+        approval. Trusted facts only (the tickets and actions tables), never ticket text."""
+        counted = [n for n, s in TOOLS.items() if s.write and n not in CLOSING_TOOLS]
+        statuses = [s.value for s in COUNTED_STATUSES]
+        row = self._row(
+            "SELECT COUNT(*) FROM actions a JOIN tickets t ON t.ticket_id = a.ticket_id "
+            f"WHERE t.requester_id = ? AND a.status IN ({', '.join('?' for _ in statuses)}) "
+            f"AND a.tool IN ({', '.join('?' for _ in counted)}) "
+            "AND a.created_at >= datetime('now', '-1 hour') AND a.action_id IS NOT ?",
+            self.requester_id, *statuses, *counted, self.exclude_action_id)
+        return row[0]
+
 
 # Predicates -----------------------------------------------------------------
 # Each takes Facts and returns a bool. The engine only runs a tool-scoped rule when
@@ -149,6 +164,11 @@ def is_counted_write(f):
 @predicate
 def write_limit_reached(f):
     return f.write_count >= f.limits["max_writes_per_ticket"]
+
+
+@predicate
+def requester_write_limit_reached(f):
+    return f.requester_write_count >= SETTINGS.max_writes_per_requester_per_hour
 
 
 @predicate
