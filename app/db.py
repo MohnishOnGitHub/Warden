@@ -99,7 +99,7 @@ CREATE TABLE actions (
     final_verdict          TEXT CHECK (final_verdict IN ('ALLOW','REQUIRE_APPROVAL','BLOCK')),
     status                  TEXT NOT NULL DEFAULT 'PROPOSED',
     latency_ms              INTEGER,
-    warden_mode             TEXT NOT NULL DEFAULT 'on' CHECK (warden_mode IN ('on','off')),
+    warden_mode             TEXT NOT NULL DEFAULT 'on' CHECK (warden_mode IN ('on','off','rules_only')),
     created_at              TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -155,8 +155,8 @@ CREATE TABLE eval_cases (
 CREATE TABLE eval_results (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
     case_id             INTEGER NOT NULL REFERENCES eval_cases(case_id),
-    warden_mode         TEXT NOT NULL CHECK (warden_mode IN ('on','off')),
-    repetition          INTEGER NOT NULL DEFAULT 1,
+    warden_mode         TEXT NOT NULL CHECK (warden_mode IN ('on','off','rules_only')),
+    repetition         INTEGER NOT NULL DEFAULT 1,
     final_status        TEXT NOT NULL,
     forbidden_executed  INTEGER NOT NULL CHECK (forbidden_executed IN (0,1)),
     forbidden_proposed  INTEGER NOT NULL DEFAULT 0,  -- the agent proposed a forbidden/watched action
@@ -169,7 +169,12 @@ CREATE TABLE eval_results (
     valid               INTEGER NOT NULL DEFAULT 1,      -- 0 = the run hit an LLM failure and is not counted
     retries_judge_unavailable INTEGER NOT NULL DEFAULT 0,  -- earlier attempts of this run lost to an unavailable judge
     retries_llm_failure       INTEGER NOT NULL DEFAULT 0,  -- earlier attempts of this run lost to an agent LLM failure
-    note                TEXT,
+    judge_interfered    INTEGER NOT NULL DEFAULT 0,  -- the judge blocked, or paused something policy allowed
+    agent_input_tokens  INTEGER NOT NULL DEFAULT 0,
+    agent_output_tokens INTEGER NOT NULL DEFAULT 0,  -- includes thinking tokens (billed as output)
+    judge_input_tokens  INTEGER NOT NULL DEFAULT 0,
+    judge_output_tokens INTEGER NOT NULL DEFAULT 0,
+    note               TEXT,
     run_at              TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE (case_id, warden_mode, repetition)
 );
@@ -182,6 +187,11 @@ EVAL_TABLES = ("eval_cases", "eval_results")
 EVAL_RESULT_ADDED_COLUMNS = {
     "retries_judge_unavailable": "INTEGER NOT NULL DEFAULT 0",
     "retries_llm_failure": "INTEGER NOT NULL DEFAULT 0",
+    "judge_interfered": "INTEGER NOT NULL DEFAULT 0",
+    "agent_input_tokens": "INTEGER NOT NULL DEFAULT 0",
+    "agent_output_tokens": "INTEGER NOT NULL DEFAULT 0",
+    "judge_input_tokens": "INTEGER NOT NULL DEFAULT 0",
+    "judge_output_tokens": "INTEGER NOT NULL DEFAULT 0",
 }
 EVAL_RESULT_BASE_COLUMNS = {
     "id", "case_id", "warden_mode", "repetition", "final_status", "forbidden_executed", "forbidden_proposed",
@@ -207,7 +217,11 @@ def ensure_eval_tables(conn):
     """Create the eval tables. A table that only lacks the later-added columns is upgraded in place, keeping its
     rows; one from an older layout than that is recreated (it only holds derived results)."""
     have = {r[1] for r in conn.execute("PRAGMA table_info(eval_results)")}
-    if have and have >= EVAL_RESULT_BASE_COLUMNS:
+    row = conn.execute("SELECT sql FROM sqlite_master WHERE name = 'eval_results'").fetchone()
+    # SQLite cannot alter a CHECK, so a table whose CHECK predates the rules_only mode is rebuilt (its results were
+    # recorded with other models and a different case set, so they are stale anyway).
+    old_check = row is not None and "warden_modeIN('on','off')" in "".join(row[0].split())
+    if have and have >= EVAL_RESULT_BASE_COLUMNS and not old_check:
         with conn:
             for name, ddl in EVAL_RESULT_ADDED_COLUMNS.items():
                 if name not in have:

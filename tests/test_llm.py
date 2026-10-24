@@ -130,3 +130,30 @@ def test_short_client_timeout_still_sends_a_valid_server_deadline():
     assert short.timeout == 6000 and short.headers["X-Server-Timeout"] == "10"
     long = llm._http_options(30)
     assert long.timeout == 30000 and long.headers["X-Server-Timeout"] == "30"
+
+
+def usage(prompt, candidates, thoughts=None):
+    from google.genai import types
+    return types.GenerateContentResponse(usage_metadata=types.GenerateContentResponseUsageMetadata(
+        prompt_token_count=prompt, candidates_token_count=candidates, thoughts_token_count=thoughts))
+
+
+def test_token_usage_is_counted_per_purpose(monkeypatch):
+    monkeypatch.setenv("AGENT_MODEL", "primary")
+    scripted(monkeypatch, [usage(100, 10, 5), usage(40, 4), usage(7, 1)])
+    before = llm.usage_snapshot()
+    llm.generate("hi", "sys", None)
+    llm.generate("hi", "sys", None, purpose="judge")
+    llm.generate("hi", "sys", None)
+    after = llm.usage_snapshot()
+    assert after["agent"][0] - before["agent"][0] == 107
+    assert after["agent"][1] - before["agent"][1] == 16  # thinking tokens count as output
+    assert after["judge"][0] - before["judge"][0] == 40 and after["judge"][1] - before["judge"][1] == 4
+
+
+def test_a_response_without_usage_is_not_an_error(monkeypatch):
+    monkeypatch.setenv("AGENT_MODEL", "primary")
+    scripted(monkeypatch, ["plain string, no usage_metadata"])
+    before = llm.usage_snapshot()
+    assert llm.generate("hi", "sys", None) == "plain string, no usage_metadata"
+    assert llm.usage_snapshot() == before

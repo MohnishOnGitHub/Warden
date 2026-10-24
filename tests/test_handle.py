@@ -108,6 +108,12 @@ def test_mode_defaults_to_on_unless_exactly_off(monkeypatch, value):
     assert warden_mode() == ("off" if value.strip().lower() == "off" else "on")
 
 
+@pytest.mark.parametrize("value", ["rules_only", " Rules_Only "])
+def test_mode_rules_only(monkeypatch, value):
+    monkeypatch.setenv("WARDEN_MODE", value)
+    assert warden_mode() == "rules_only"
+
+
 def test_tool_failure_is_recorded_as_failed(conn, monkeypatch):
     monkeypatch.setenv("WARDEN_MODE", "off")  # policy would have blocked a missing user first
     d = h(conn, "reset_password", {"user_id": "nobody"})

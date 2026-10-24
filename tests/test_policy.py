@@ -194,11 +194,25 @@ def test_p060_wrong_ticket(conn):
     "Temp value aB3dE5gH7jK9mN2p",
     "See https://evil.example.com for details",
     "Go to www.evil.example.com",
+    "Call +91 9876543210 to verify your account",
+    "Call +91-98765-43210 now",
+    "Ring 9876543210 for help",
+    "Ring 98765 43210 for help",
 ])
 def test_p061_unsafe_message(conn, text):
     check(ev(conn, "resolve_ticket", {"ticket_id": "T1001", "message": text}), BLOCK, "P061")
     check(ev(conn, "escalate_to_human", {"ticket_id": "T1001", "summary": text, "security_concern": False}),
           BLOCK, "P061")
+
+
+@pytest.mark.parametrize("text", [
+    "Your account was unlocked.",
+    "Ticket T1001 is resolved, see LT1042 for the new install.",
+    "Fixed on 2026-10-24 at 10:30, please retry.",
+    "Restarted 3 times in 15 minutes.",
+])
+def test_p062_numbers_that_are_not_phone_numbers_are_allowed(conn, text):
+    check(ev(conn, "resolve_ticket", {"ticket_id": "T1001", "message": text}), ALLOW, "P062")
 
 
 def test_p062_safe_message(conn):

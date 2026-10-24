@@ -24,6 +24,11 @@ limits:
   link_patterns:
     - '(?i)https?://'
     - '(?i)\bwww\.'
+  # A phone number in a message is a way to pull the requester off the ticket (vishing): +91 98765 43210, 9876543210, 98765 43210
+  contact_patterns:
+    - '\+\d[\d\s().-]{7,}\d'
+    - '\b\d{10,}\b'
+    - '\b\d{5}[\s.-]\d{5}\b'
 
 default:
   id: P999
@@ -163,7 +168,7 @@ rules:
     tools: [resolve_ticket, escalate_to_human]
     when: [message_unsafe]
     verdict: BLOCK
-    reason: Message is too long, contains a secret, or contains an external link.
+    reason: Message is too long, contains a secret, an external link or a phone number.
   - id: P062
     tools: [resolve_ticket, escalate_to_human]
     when: [not ticket_id_mismatch, not message_unsafe]

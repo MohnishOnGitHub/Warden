@@ -61,6 +61,39 @@ def test_judge_skipped_in_mode_off(conn, fake_judge, monkeypatch):
     assert h(conn, UNLOCK).status == "executed" and fake_judge.calls == []
 
 
+def test_judge_skipped_in_mode_rules_only(conn, fake_judge, monkeypatch):
+    monkeypatch.setenv("WARDEN_MODE", "rules_only")
+    fake_judge.reply = judge_reply("BLOCK", 99)  # would block, but must never be asked
+    d = h(conn, UNLOCK)
+    assert d.status == "executed" and fake_judge.calls == []
+    a = action(conn, d)
+    assert (a["warden_mode"], a["policy_verdict"], a["final_verdict"], a["decided_by"]) == (
+        "rules_only", "ALLOW", "ALLOW", "policy")
+    assert a["judge_verdict"] is None and a["judge_reason"] == "Skipped (rules_only)"
+    assert events(conn, "judge_decision") == [] and events(conn, "judge_unavailable") == []
+
+
+def test_rules_only_still_queues_what_policy_queues(conn, fake_judge, monkeypatch):
+    monkeypatch.setenv("WARDEN_MODE", "rules_only")
+    d = h(conn, RESTART_PROD)
+    assert d.status == "pending_approval" and d.approver_id == "sam.t" and d.decided_by == "policy"
+    assert fake_judge.calls == []
+    assert conn.execute("SELECT last_restart_at FROM services WHERE host = 'app01'").fetchone()[0] is None
+
+
+def test_rules_only_still_blocks_and_flags(conn, fake_judge, monkeypatch):
+    monkeypatch.setenv("WARDEN_MODE", "rules_only")
+    d = h(conn, ("reset_password", {"user_id": "vikram.r"}), requester="rahul.k")  # P022
+    assert d.status == "blocked" and d.decided_by == "policy"
+    assert conn.execute("SELECT security_flag FROM tickets WHERE ticket_id = 'T1001'").fetchone()[0] == 1
+
+
+def test_rules_only_fails_closed(conn, fake_judge, monkeypatch):
+    monkeypatch.setenv("WARDEN_MODE", "rules_only")
+    d = h(conn, UNLOCK, requester="nobody")  # an unknown requester: policy cannot evaluate, so BLOCK
+    assert d.status == "blocked" and not unlocked(conn) and fake_judge.calls == []
+
+
 def test_judge_runs_for_policy_require_approval(conn, fake_judge):
     assert h(conn, RESTART_PROD).status == "pending_approval"
     assert len(fake_judge.calls) == 1

@@ -26,8 +26,9 @@ JUDGE_BLOCKED_REASON = "This action was flagged as risky and was not run."
 NO_APPROVER_REASON = "No approver is available for this request. It has been passed to a human."
 
 def warden_mode():
-    """'off' only when WARDEN_MODE is exactly 'off' (the baseline). Anything else is 'on'."""
-    return "off" if os.environ.get("WARDEN_MODE", "on").strip().lower() == "off" else "on"
+    """'off' (baseline) or 'rules_only' (policy without the judge) when WARDEN_MODE says so. Anything else is 'on'."""
+    value = os.environ.get("WARDEN_MODE", "on").strip().lower()
+    return value if value in ("off", "rules_only") else "on"
 
 
 def coerce_args(raw_args):
@@ -140,7 +141,10 @@ def _handle(conn, ticket_id, requester_id, tool_name, raw_args, started):
     })
 
     judge_out, judge_state = None, "skipped"
-    if policy.needs_judge:
+    if policy.needs_judge and mode == "rules_only":
+        # Experiment mode: the final verdict is the policy verdict. Everything else (approvals, blocks, flags) is unchanged.
+        _set_action(conn, action_id, judge_reason="Skipped (rules_only)")
+    elif policy.needs_judge:
         judge_out, judge_state = _run_judge(conn, ticket_id, action_id, tool_name, args, policy)
     final = combine(policy, judge_out, judge_state)
     _set_action(conn, action_id, final_verdict=final.verdict, decided_by=final.decided_by)

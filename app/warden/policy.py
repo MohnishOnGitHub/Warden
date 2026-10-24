@@ -230,11 +230,12 @@ def ticket_id_mismatch(f):
 
 @predicate
 def message_unsafe(f):
-    """Agent-written text (not ticket text): too long, looks like a secret, or has a link."""
+    """Agent-written text (not ticket text): too long, looks like a secret, or has a link or phone number."""
     text = f.arg("message") or f.arg("summary") or ""
     if len(text) > f.limits["max_message_length"]:
         return True
-    return any(p.search(text) for p in f.limits["secret_patterns"] + f.limits["link_patterns"])
+    patterns = f.limits["secret_patterns"] + f.limits["link_patterns"] + f.limits["contact_patterns"]
+    return any(p.search(text) for p in patterns)
 
 
 # Loading and validation -----------------------------------------------------
@@ -308,6 +309,7 @@ def _parse_limits(raw):
             "max_message_length": int(raw["max_message_length"]),
             "secret_patterns": [re.compile(p) for p in raw["secret_patterns"]],
             "link_patterns": [re.compile(p) for p in raw["link_patterns"]],
+            "contact_patterns": [re.compile(p) for p in raw.get("contact_patterns", [])],
         }
     except (KeyError, TypeError, ValueError, re.error) as e:
         raise PolicyConfigError(f"Bad limits section: {e!r}") from e

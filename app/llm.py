@@ -84,6 +84,29 @@ def waited_seconds():
     return _waited_s
 
 
+# Tokens used so far, per purpose: [input, output]. Thinking tokens count as output (they are billed as output).
+# Callers take a snapshot before and after a piece of work and subtract, like waited_seconds().
+_usage = {"agent": [0, 0], "judge": [0, 0]}
+
+
+def _add_usage(purpose, response):
+    meta = getattr(response, "usage_metadata", None)
+    if meta is None:
+        return
+    try:
+        prompt = int(meta.prompt_token_count or 0)
+        output = int(meta.candidates_token_count or 0) + int(meta.thoughts_token_count or 0)
+    except (TypeError, ValueError):
+        return  # counting tokens must never break a call
+    counts = _usage.setdefault(purpose, [0, 0])
+    counts[0] += prompt
+    counts[1] += output
+
+
+def usage_snapshot():
+    return {purpose: tuple(counts) for purpose, counts in _usage.items()}
+
+
 def _retryable(e):
     if isinstance(e, errors.APIError):
         return e.code in RETRY_CODES
@@ -92,7 +115,7 @@ def _retryable(e):
 
 def generate(contents, system_instruction, function_declarations, model=None, timeout_s=DEFAULT_TIMEOUT_S,
              json_output=False, max_total_s=None, attempts_per_model=ATTEMPTS_PER_MODEL,
-             backoff_base_s=BACKOFF_BASE_S):
+             backoff_base_s=BACKOFF_BASE_S, purpose="agent"):
     """One model call. Retries 429/503 and timeouts with backoff, then tries FALLBACK_MODEL.
 
     max_total_s is a hard budget for everything (attempts, backoff sleeps, fallback):
@@ -127,7 +150,9 @@ def generate(contents, system_instruction, function_declarations, model=None, ti
                 raise LLMError("Time budget exhausted") from last_error
             call_timeout = timeout_s if left is None else min(timeout_s, left)
             try:
-                return _call(name, contents, config, call_timeout)
+                response = _call(name, contents, config, call_timeout)
+                _add_usage(purpose, response)
+                return response
             except Exception as e:
                 if not _retryable(e):
                     raise LLMError(f"{type(e).__name__} from {name}") from e

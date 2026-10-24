@@ -94,7 +94,7 @@ def call_model(contents, system_instruction):
     response = llm.generate(
         contents, system_instruction, None,
         model=os.getenv("JUDGE_MODEL"), timeout_s=budget, json_output=True,
-        max_total_s=budget, attempts_per_model=2, backoff_base_s=0.5,
+        max_total_s=budget, attempts_per_model=2, backoff_base_s=0.5, purpose="judge",
     )
     return response.text
 
