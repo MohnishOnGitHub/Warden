@@ -431,6 +431,19 @@ def print_dry_run(cases, plan, delay, resume_info=None, out=print):
 
 # Entry point ---------------------------------------------------------------------------------------
 
+def _check_models(playing):
+    """A wrong model name makes every call fail and looks like an outage, so stop before spending quota.
+    Returns 0 when the names are fine (or cannot be checked), 1 after printing what is wrong."""
+    if playing:
+        return 0
+    try:
+        llm.check_models()
+    except llm.LLMConfigError as e:
+        print(f"\nCONFIGURATION ERROR: {e}", file=sys.stderr)
+        return 1
+    return 0
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--cases", default=str(CASES_PATH))
@@ -461,7 +474,7 @@ def main(argv=None):
             finally:
                 conn.close()
         print_dry_run(cases, plan, args.delay, resume_info)
-        return 0
+        return _check_models(playing)
 
     if not playing:
         if not os.environ.get("GEMINI_API_KEY"):
@@ -469,6 +482,8 @@ def main(argv=None):
         print_dry_run(cases, plan, args.delay)
         if not args.yes:
             sys.exit("\nThis is a live run and uses Gemini quota. Re-run with --yes to start.")
+        if _check_models(playing):
+            return 1
     llm.set_min_interval(0 if playing else args.delay)
 
     conn, sim = get_connection(), get_connection(args.sim_db)

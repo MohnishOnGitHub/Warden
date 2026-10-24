@@ -157,3 +157,70 @@ def test_a_response_without_usage_is_not_an_error(monkeypatch):
     before = llm.usage_snapshot()
     assert llm.generate("hi", "sys", None) == "plain string, no usage_metadata"
     assert llm.usage_snapshot() == before
+
+
+def test_a_404_is_a_config_error_with_its_status_and_is_not_retried(monkeypatch, no_sleep):
+    monkeypatch.setenv("AGENT_MODEL", "no-such-model")
+    monkeypatch.delenv("FALLBACK_MODEL", raising=False)
+    calls = scripted(monkeypatch, [api_error(404)])
+    with pytest.raises(llm.LLMConfigError) as e:
+        llm.generate("hi", "sys", None)
+    assert (e.value.status, e.value.cause_type, len(calls)) == (404, "ClientError", 1)
+
+
+def test_other_failures_keep_status_and_type_but_are_not_config_errors(monkeypatch, no_sleep):
+    monkeypatch.setenv("AGENT_MODEL", "primary")
+    monkeypatch.delenv("FALLBACK_MODEL", raising=False)
+    scripted(monkeypatch, [api_error(503)] * 3)
+    with pytest.raises(llm.LLMError) as e:
+        llm.generate("hi", "sys", None)
+    assert not isinstance(e.value, llm.LLMConfigError) and (e.value.status, e.value.cause_type) == (503, "ServerError")
+    scripted(monkeypatch, [httpx.ReadTimeout("slow")] * 3)
+    with pytest.raises(llm.LLMError) as e:
+        llm.generate("hi", "sys", None)
+    assert (e.value.status, e.value.cause_type) == (None, "ReadTimeout")
+
+
+class FakeModels:
+    def __init__(self, known):
+        self.known, self.asked = known, []
+
+    def get(self, model):
+        self.asked.append(model)
+        if model not in self.known:
+            raise api_error(404)
+
+
+def fake_client(monkeypatch, known):
+    models = FakeModels(known)
+    monkeypatch.setattr(llm.genai, "Client", lambda **kw: type("C", (), {"models": models})())
+    return models
+
+
+def test_check_models_names_the_wrong_variable(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "k")
+    monkeypatch.setenv("AGENT_MODEL", "good")
+    monkeypatch.setenv("JUDGE_MODEL", "gemini-3.8-flash-lite")
+    monkeypatch.delenv("FALLBACK_MODEL", raising=False)
+    fake_client(monkeypatch, {"good"})
+    with pytest.raises(llm.LLMConfigError, match="JUDGE_MODEL=gemini-3.8-flash-lite") as e:
+        llm.check_models()
+    assert "AGENT_MODEL" not in str(e.value) and "k" != str(e.value)
+
+
+def test_check_models_passes_when_all_names_exist_and_ignores_other_errors(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "k")
+    monkeypatch.setenv("AGENT_MODEL", "a")
+    monkeypatch.setenv("JUDGE_MODEL", "j")
+    monkeypatch.setenv("FALLBACK_MODEL", "f")
+    models = fake_client(monkeypatch, {"a", "j", "f"})
+    llm.check_models()
+    assert models.asked == ["a", "j", "f"]
+    monkeypatch.setattr(models, "get", lambda model: (_ for _ in ()).throw(api_error(429)))
+    llm.check_models()  # rate limited is not a configuration error
+
+
+def test_check_models_without_a_key_does_nothing(monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.setattr(llm.genai, "Client", lambda **kw: pytest.fail("no key, no call"))
+    llm.check_models()

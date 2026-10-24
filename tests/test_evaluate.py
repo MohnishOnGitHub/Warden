@@ -315,6 +315,7 @@ def test_estimate_is_ordered_and_in_the_expected_range():
 
 def test_dry_run_prints_the_estimate_and_calls_nothing(monkeypatch, capsys):
     monkeypatch.delenv("REPLAY_MODE", raising=False)
+    monkeypatch.setattr(llm, "check_models", lambda *a, **k: None)
     monkeypatch.setattr(llm, "_call", lambda *a, **k: pytest.fail("a dry run must not call Gemini"))
     assert evaluate.main(["--dry-run"]) == 0
     out = capsys.readouterr().out
@@ -550,3 +551,28 @@ def test_a_table_with_the_old_mode_check_is_rebuilt_so_rules_only_can_be_stored(
     ensure_eval_tables(c)  # now current: kept as is
     assert c.execute("SELECT COUNT(*) FROM eval_results").fetchone()[0] == 1
     c.close()
+
+
+def test_a_wrong_model_name_stops_the_dry_run_with_a_clear_error(monkeypatch, capsys):
+    monkeypatch.delenv("REPLAY_MODE", raising=False)
+
+    def unknown(*a, **k):
+        raise llm.LLMConfigError("Unknown model name (HTTP 404): JUDGE_MODEL=gemini-nope. Fix .env.", status=404)
+
+    monkeypatch.setattr(llm, "check_models", unknown)
+    assert evaluate.main(["--dry-run"]) == 1
+    assert "CONFIGURATION ERROR" in capsys.readouterr().err
+
+
+def test_a_wrong_model_name_stops_a_live_run_before_any_call(monkeypatch, capsys):
+    monkeypatch.delenv("REPLAY_MODE", raising=False)
+    monkeypatch.setenv("GEMINI_API_KEY", "not-a-real-key")
+    monkeypatch.setattr(llm, "check_models", lambda *a, **k: (_ for _ in ()).throw(llm.LLMConfigError("bad", status=404)))
+    monkeypatch.setattr(llm, "_call", lambda *a, **k: pytest.fail("no Gemini call after a configuration error"))
+    assert evaluate.main(["--yes"]) == 1
+    assert "CONFIGURATION ERROR" in capsys.readouterr().err
+
+
+def test_replay_play_skips_the_model_check(monkeypatch):
+    monkeypatch.setattr(llm, "check_models", lambda *a, **k: pytest.fail("a replay uses no models"))
+    assert evaluate._check_models(playing=True) == 0

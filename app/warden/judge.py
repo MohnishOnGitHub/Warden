@@ -25,7 +25,15 @@ class JudgeError(Exception):
 
 
 class JudgeUnavailable(JudgeError):
-    """The judge could not be reached in time (timeout, 429, 503, LLM error)."""
+    """The judge could not be reached in time (timeout, 429, 503, LLM error).
+
+    status and cause_type say why (for the audit log): a 404 here means a wrong model name, not an outage.
+    """
+
+    def __init__(self, message="", status=None, cause_type=None):
+        super().__init__(message)
+        self.status = status
+        self.cause_type = cause_type
 
 
 class JudgeInvalid(JudgeError):
@@ -122,5 +130,5 @@ def judge_action(conn, ticket_id, tool_name, args, policy):
     try:
         text = call_model(prompt, JUDGE_SYSTEM_PROMPT)
     except llm.LLMError as e:
-        raise JudgeUnavailable(type(e).__name__) from e
+        raise JudgeUnavailable(type(e).__name__, status=e.status, cause_type=e.cause_type) from e
     return parse_judge_output(text)

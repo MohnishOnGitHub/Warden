@@ -6,7 +6,7 @@ judge_block_score: 70
 judge_approval_score: 40
 
 # Total time budget for one judge decision, retries and fallback model included.
-judge_timeout_seconds: 10
+judge_timeout_seconds: 15
 
 # Approver used when the judge (or an unavailable judge) sends an ALLOWed action to approval.
 fallback_approver: sam.t

@@ -108,7 +108,7 @@ def test_call_model_uses_judge_model_json_mode_and_budget(monkeypatch):
     monkeypatch.setattr(judge.llm, "generate", fake_generate)
     assert REAL_CALL_MODEL("p", "s") == "{}"
     assert seen["model"] == "judge-model-x" and seen["json_output"] is True and seen["tools"] is None
-    assert seen["max_total_s"] == SETTINGS.judge_timeout_seconds == 10
+    assert seen["max_total_s"] == SETTINGS.judge_timeout_seconds == 15
 
 
 def test_settings_validation(tmp_path):

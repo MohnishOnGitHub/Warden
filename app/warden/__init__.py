@@ -93,7 +93,9 @@ def _run_judge(conn, ticket_id, action_id, tool_name, args, policy):
         out = judge_action(conn, ticket_id, tool_name, args, policy)
     except JudgeUnavailable as e:
         _set_action(conn, action_id, judge_reason="Judge unavailable", judge_latency_ms=_elapsed_ms(judge_started))
-        log_event(conn, "judge_unavailable", "judge", ticket_id, {"action_id": action_id, "error": str(e)})
+        log_event(conn, "judge_unavailable", "judge", ticket_id, {
+            "action_id": action_id, "error": str(e), "status": e.status, "cause": e.cause_type,
+            "config_error": e.status == 404})
         return None, "unavailable"
     except JudgeInvalid as e:
         _set_action(conn, action_id, judge_reason=f"Judge output invalid ({e.kind})",

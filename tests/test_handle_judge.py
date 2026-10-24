@@ -288,3 +288,28 @@ def test_spacing_delay_is_not_counted_as_warden_or_judge_latency(conn, fake_judg
     a = action(conn, d)
     assert d.status == "executed"
     assert a["judge_latency_ms"] < 1000 and a["latency_ms"] < 1000  # not 5000+
+
+
+def test_judge_unavailable_payload_says_why(conn, fake_judge, monkeypatch):
+    from app.warden import judge
+    from app.llm import LLMConfigError
+
+    def not_found(contents, system_instruction):
+        raise LLMConfigError("ClientError from m", status=404, cause_type="ClientError")
+
+    monkeypatch.setattr(judge, "call_model", not_found)
+    d = h(conn, UNLOCK)
+    assert d.status == "pending_approval" and d.decided_by == "judge_unavailable"  # still fails safe
+    [ev] = events(conn, "judge_unavailable")
+    assert (ev["status"], ev["cause"], ev["config_error"]) == (404, "ClientError", True)
+
+
+@pytest.mark.parametrize("error,status,cause", [
+    (llm.LLMError("t", status=503, cause_type="ServerError"), 503, "ServerError"),
+    (llm.LLMError("t", cause_type="ReadTimeout"), None, "ReadTimeout"),
+])
+def test_ordinary_outages_are_not_flagged_as_config_errors(conn, fake_judge, error, status, cause):
+    fake_judge.reply = error
+    h(conn, UNLOCK)
+    [ev] = events(conn, "judge_unavailable")
+    assert (ev["status"], ev["cause"], ev["config_error"]) == (status, cause, False)

@@ -25,8 +25,28 @@ MIN_SERVER_DEADLINE_S = 10  # the Gemini API rejects shorter deadlines
 
 
 class LLMError(Exception):
-    """The model could not be reached or refused the request. Callers fail closed."""
+    """The model could not be reached or refused the request. Callers fail closed.
 
+    status is the HTTP status of the underlying API error (None for timeouts and connection errors) and cause_type
+    the name of the underlying exception, so an audit entry can say why and not just "LLMError".
+    """
+
+    def __init__(self, message="", status=None, cause_type=None):
+        super().__init__(message)
+        self.status = status
+        self.cause_type = cause_type
+
+
+class LLMConfigError(LLMError):
+    """The request can never work with this configuration (for example a model name the API does not know).
+    Retrying is pointless and it is not an outage: fix the configuration."""
+
+
+def _wrap(e, message):
+    """Turn an SDK or network exception into an LLMError that remembers its status and type."""
+    status = e.code if isinstance(e, errors.APIError) else None
+    cls = LLMConfigError if status == 404 else LLMError
+    return cls(message, status=status, cause_type=type(e).__name__)
 
 def _now():
     return time.monotonic()
@@ -155,7 +175,7 @@ def generate(contents, system_instruction, function_declarations, model=None, ti
                 return response
             except Exception as e:
                 if not _retryable(e):
-                    raise LLMError(f"{type(e).__name__} from {name}") from e
+                    raise _wrap(e, f"{type(e).__name__} from {name}") from e
                 last_error = e
                 if attempt < attempts_per_model - 1:
                     pause = backoff_base_s * 2 ** attempt + random.uniform(0, backoff_base_s)
@@ -163,7 +183,32 @@ def generate(contents, system_instruction, function_declarations, model=None, ti
                     if left is not None:
                         pause = min(pause, max(left, 0))
                     time.sleep(pause)
-    raise LLMError(f"All models failed: {type(last_error).__name__}") from last_error
+    raise _wrap(last_error, f"All models failed: {type(last_error).__name__}") from last_error
+
+
+def check_models(timeout_s=10.0):
+    """Fail loudly if AGENT_MODEL, JUDGE_MODEL or FALLBACK_MODEL names a model the API does not know (404).
+
+    Fetches model metadata only: no generation, almost no quota. Other problems (network, rate limit) are not a
+    configuration error and are ignored here. Raises LLMConfigError naming the bad variables.
+    """
+    if not os.getenv("GEMINI_API_KEY"):
+        return
+    bad = []
+    client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"), http_options=_http_options(timeout_s))
+    for var in ("AGENT_MODEL", "JUDGE_MODEL", "FALLBACK_MODEL"):
+        name = os.getenv(var)
+        if not name:
+            continue
+        try:
+            client.models.get(model=name)
+        except errors.APIError as e:
+            if e.code == 404:
+                bad.append(f"{var}={name}")
+        except Exception:
+            pass
+    if bad:
+        raise LLMConfigError("Unknown model name (HTTP 404): " + ", ".join(bad) + ". Fix .env.", status=404)
 
 
 def ping(timeout_s=10.0):
