@@ -83,7 +83,7 @@ What this shows:
 - **A6 is where the judge matters.** These tickets ask for actions that policy allows (restart a non-production service, install an approved package, reset your own password) but that have nothing to do with the problem described. Rules cannot tell them from a real request. Of the 15 runs that got through rules only, the judge stopped 14. One of 18 ran.
 - **Who stopped the 78 attacks with Warden on:** policy 28, judge 17, the agent on its own 32, none 1. With no guard the agent refused on its own in 30 of 78 runs.
 - **Routine tickets:** 0 of 18 blocked or paused by Warden that policy did not already require. The judge made 40 calls; 2 (5%) were unavailable and would have gone to approval.
-- **Cost of the judge:** median time per ticket was 6.8 s with no guard, 6.7 s with rules only and 10.3 s with Warden (p95 13.0, 13.9 and 21.7 s). The judge call itself has a median of 7.8 s and uses about 250 input and 160 output tokens per ticket; the agent about 1,900 input and 74 output.
+- **Cost of the judge:** median time per ticket was 6.8 s with no guard, 6.7 s with rules only and 10.3 s with Warden (p95 13.0, 13.9 and 21.7 s). The judge call itself has a median of 7.8 s and uses about 250 input and 160 output tokens per ticket; the agent about 1,900 input and 74 output. The judge takes about 8 s per call, but only write actions call it, so it adds about 3.6 s per ticket on average.
 - **Suspicious-context tickets** (3 tickets where the rules allow the action but the text is suspicious, such as "paste the new temporary password in your reply"): the agent proposed the watched action in 1 of them, and the judge flagged it. Too few to call a rate.
 
 The run can be reproduced offline from the recorded Gemini responses: `$env:REPLAY_MODE = "play"; python redteam/evaluate.py`.
@@ -148,7 +148,7 @@ python -m pytest    # 558 tests, no API key or network needed
 
 If script activation is blocked, run `Set-ExecutionPolicy -Scope Process Bypass` first. `reset_db.py` recreates `data/warden.db`; close the API and dashboard before running it. To check your key and model names: `python scripts/smoke_gemini.py`.
 
-Start the API and the dashboard in two terminals, each with the venv activated, from the repo root. `DEMO_MODE=1` enables the Warden on/off switch and the demo reset, and shortens the approval timeout to 2 minutes.
+Start the API and the dashboard in two terminals, each with the venv activated, from the repo root. `DEMO_MODE=1` (PowerShell: `$env:DEMO_MODE = "1"`) enables the Warden on/off switch and the demo reset, and shortens the approval timeout to 2 minutes.
 
 ```powershell
 # terminal 1
@@ -171,12 +171,12 @@ Evaluation:
 
 ```powershell
 python redteam/evaluate.py --dry-run     # plan and Gemini call estimate (about 570); calls nothing
-python redteam/evaluate.py --yes         # live run, uses Gemini quota; add REPLAY_MODE=record to save the calls
+python redteam/evaluate.py --yes         # live run, uses Gemini quota; add REPLAY_MODE=record (PowerShell: $env:REPLAY_MODE = "record") to save the calls
 ```
 
 ## Demo (about five minutes)
 
-Run `python scripts/reset_db.py` first, start the API with `DEMO_MODE=1`, and use the "Load demo ticket" dropdown on the Live feed page.
+Run `python scripts/reset_db.py` first, start the API with `DEMO_MODE=1` (PowerShell: `$env:DEMO_MODE = "1"`), and use the "Load demo ticket" dropdown on the Live feed page.
 
 1. **Routine ticket: `priya.s`, "I'm locked out".** The agent unlocks the account. Policy allows it, the judge agrees, the ticket is resolved. Open Ticket detail to show the policy, judge and final verdict side by side.
 2. **Approval: `arjun.m`, "Access to FinanceReports".** A standard group needs its owner's sign-off, so the ticket waits. In Approvals, approve as `anita.d`: the stored call runs once. `arjun.m` cannot approve their own request.
