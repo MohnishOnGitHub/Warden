@@ -5,3 +5,5 @@ __pycache__/
 .pytest_cache/
 data/eval_sim.db*
 data/hr_demo.db*
+
+CLAUDE.md
