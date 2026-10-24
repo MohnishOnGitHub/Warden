@@ -24,7 +24,7 @@ ticket ──> ingestion ──> agent loop (max 8 steps) ──proposed tool ca
 | `app/agent.py` | The agent loop. Sees only executed result, pending approval, or a blocked reason, never rule IDs or scores. |
 | `app/warden/` | `handle()` plus the policy engine, the LLM judge and the combiner. |
 | `app/tools.py` | The 8 tools, their Pydantic argument models and mock implementations. |
-| `app/approvals.py` | Create, approve, deny, expire; an approved call runs exactly once. |
+| `app/approvals.py` | Create, approve, deny, expire; an approved call runs exactly once, after policy is rechecked against the current directory (a call policy now blocks is denied, not run). |
 | `app/audit.py` | Append-only audit log, metric queries, redaction. |
 | `app/llm.py`, `app/replay.py` | Gemini wrapper (timeouts, retries, fallback model) and the record/replay cache. |
 | `app/main.py` | FastAPI routes. |

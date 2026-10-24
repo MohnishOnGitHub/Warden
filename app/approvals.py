@@ -1,7 +1,8 @@
 """Human approvals for REQUIRE_APPROVAL actions: create, approve, deny, expire.
 
 The stored tool call (tool, args, obligations on the actions row) runs at most once, and
-only after the named approver says yes. Nothing is re-evaluated at approval time.
+only after the named approver says yes. At approval, policy (not the judge) is run again on the stored call
+against the directory as it is now: if it now says BLOCK, the call does not run.
 """
 import json
 import os
@@ -19,6 +20,8 @@ TS_FORMAT = "%Y-%m-%d %H:%M:%S"  # UTC, sorts as text
 NO_APPROVER_NOTE = "No approver is available for this request. A human will follow up."
 APPROVED_FAILED_NOTE = "The approved action could not be completed. A human will follow up."
 EXPIRED_NOTE = "The approval request expired without a decision. A human will follow up."
+# {reason} is the policy rule's own reason text, never ticket text.
+POLICY_CHANGED_NOTE = "This request was approved, but policy no longer allows it ({reason}). A human will follow up."
 
 # Resolution notes for approved actions. Only trusted values go in: approver name and validated tool args.
 APPROVED_NOTES = {
@@ -41,7 +44,7 @@ class Created:
 @dataclass(frozen=True)
 class ApprovalResult:
     ok: bool
-    status: str   # executed, denied, expired, failed, or a rejection: not_found, not_pending, self_approval, not_the_approver
+    status: str   # executed, denied, expired, failed, policy_changed, or a rejection: not_found, not_pending, self_approval, not_the_approver
     message: str
     result: dict | None = None
 
@@ -165,6 +168,37 @@ def _precheck(conn, row, approver_id, now):
     return None
 
 
+def _recheck_policy(conn, row):
+    """Run policy again on the stored call. Returns an ApprovalResult if it is now BLOCK (nothing runs), else None.
+
+    The directory may have changed since the request was queued (a package denied, a group made privileged, the
+    target removed). REQUIRE_APPROVAL and ALLOW both go on: the human already decided. An error while evaluating
+    fails closed (evaluate_policy returns BLOCK). Not a security event: the requester did nothing wrong.
+    """
+    from app.warden.policy import BLOCK, evaluate_policy  # imported here: app.warden itself imports this module
+
+    try:
+        args = json.loads(row["args_json"])
+    except ValueError:
+        args = None  # unreadable stored args: policy rejects them (P002) and nothing runs
+    policy = evaluate_policy(row["tool"], args, row["requester_id"], row["ticket_id"], conn,
+                             exclude_action_id=row["action_id"])
+    if policy.verdict != BLOCK:
+        return None
+
+    with conn:
+        conn.execute("UPDATE approvals SET status = 'DENIED', comment = 'policy_changed' "
+                     "WHERE approval_id = ? AND status = 'APPROVED'", (row["approval_id"],))
+    _move_action(conn, row["action_id"], ActionStatus.DENIED)
+    set_action(conn, row["action_id"], decided_by="policy_changed")
+    note = POLICY_CHANGED_NOTE.format(reason=policy.reason.rstrip("."))
+    _set_ticket(conn, row["ticket_id"], "ESCALATED", note)
+    log_event(conn, "approval_policy_recheck_blocked", "warden", row["ticket_id"], {
+        "approval_id": row["approval_id"], "action_id": row["action_id"], "tool": row["tool"],
+        "rule_id": policy.rule_id, "reason": policy.reason})
+    return ApprovalResult(False, "policy_changed", note)
+
+
 def approve(conn, approval_id, approver_id, comment=None, now=None):
     """Run the stored tool call, once, if approver_id is the named approver (and not the requester)."""
     now = _now(now)
@@ -186,6 +220,10 @@ def approve(conn, approval_id, approver_id, comment=None, now=None):
         return _reject(conn, row, approver_id, "not_pending", "This approval was already decided.")
     log_event(conn, "approval_approved", approver_id, row["ticket_id"],
               {"approval_id": approval_id, "action_id": row["action_id"], "comment": comment})
+
+    blocked = _recheck_policy(conn, row)
+    if blocked is not None:
+        return blocked
 
     try:
         args = json.loads(row["args_json"])

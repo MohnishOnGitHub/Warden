@@ -41,8 +41,9 @@ class PolicyError(Exception):
 class Facts:
     """Lazy, cached lookups of everything a predicate may ask about this call."""
 
-    def __init__(self, conn, tool_name, raw_args, requester_id, ticket_id, limits):
+    def __init__(self, conn, tool_name, raw_args, requester_id, ticket_id, limits, exclude_action_id=None):
         self.conn = conn
+        self.exclude_action_id = exclude_action_id
         self.tool_name = tool_name
         self.raw_args = raw_args
         self.requester_id = requester_id
@@ -108,10 +109,12 @@ class Facts:
         """Write actions already executed or waiting for approval on this ticket."""
         counted = [n for n, s in TOOLS.items() if s.write and n not in CLOSING_TOOLS]
         statuses = [s.value for s in COUNTED_STATUSES]
+        # Rechecking a stored action (at approval) must not count that action against itself.
         row = self._row(
             f"SELECT COUNT(*) FROM actions WHERE ticket_id = ? "
-            f"AND status IN ({', '.join('?' for _ in statuses)}) AND tool IN ({', '.join('?' for _ in counted)})",
-            self.ticket_id, *statuses, *counted)
+            f"AND status IN ({', '.join('?' for _ in statuses)}) AND tool IN ({', '.join('?' for _ in counted)}) "
+            "AND action_id IS NOT ?",
+            self.ticket_id, *statuses, *counted, self.exclude_action_id)
         return row[0]
 
 
@@ -378,11 +381,14 @@ def _blocked(rule_id, reason):
     return PolicyResult(BLOCK, rule_id, (rule_id,), reason)
 
 
-def evaluate_policy(tool_name, args, requester_id, ticket_id, conn, policy=None):
-    """Return the policy verdict for one proposed tool call. Never raises."""
+def evaluate_policy(tool_name, args, requester_id, ticket_id, conn, policy=None, exclude_action_id=None):
+    """Return the policy verdict for one proposed tool call. Never raises.
+
+    exclude_action_id: an already stored action to leave out of the per-ticket write count (the recheck at approval).
+    """
     policy = policy or POLICY
     try:
-        facts = Facts(conn, tool_name, args, requester_id, ticket_id, policy.limits)
+        facts = Facts(conn, tool_name, args, requester_id, ticket_id, policy.limits, exclude_action_id)
         facts.requester  # an unknown requester fails closed, even for rules that never look at them
 
         matched = [r for r in policy.rules if _rule_matches(r, facts)]

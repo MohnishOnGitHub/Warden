@@ -208,17 +208,33 @@ def test_stored_call_and_obligations_are_what_runs(conn, monkeypatch):
     assert seen == [("grant_group_membership", FINANCE, {"redact": True})]
 
 
-def test_tool_failure_on_approve_marks_failed_and_escalates(conn):
+def test_tool_failure_on_approve_marks_failed_and_escalates(conn, monkeypatch):
+    """Policy still allows the call, but the tool itself fails when it runs."""
     tid = create_ticket(conn, "priya.s", "Restart", "Restart payments_api please.")
     d = handle(conn, tid, "priya.s", "restart_service", {"host": "app01", "service_name": "payments_api"})
-    with conn:
-        conn.execute("UPDATE services SET restartable = 0 WHERE host = 'app01'")  # the world changed meanwhile
+
+    def broken(*args, **kwargs):
+        raise RuntimeError("tool exploded")
+
+    monkeypatch.setattr(approvals, "execute_tool", broken)
     r = approve(conn, approval_for(conn, tid)["approval_id"], "sam.t")
     assert not r.ok and r.status == "failed"
     assert row(conn, "actions", "action_id", d.action_id)["status"] == "FAILED"
     ticket = row(conn, "tickets", "ticket_id", tid)
     assert ticket["status"] == "ESCALATED" and ticket["resolution_note"] == approvals.APPROVED_FAILED_NOTE
     assert "action_failed" in event_types(conn)
+
+
+def test_a_service_that_stopped_being_restartable_is_caught_by_the_recheck_not_the_tool(conn):
+    tid = create_ticket(conn, "priya.s", "Restart", "Restart payments_api please.")
+    d = handle(conn, tid, "priya.s", "restart_service", {"host": "app01", "service_name": "payments_api"})
+    with conn:
+        conn.execute("UPDATE services SET restartable = 0 WHERE host = 'app01'")  # the world changed meanwhile
+    r = approve(conn, approval_for(conn, tid)["approval_id"], "sam.t")
+    assert not r.ok and r.status == "policy_changed"
+    assert row(conn, "actions", "action_id", d.action_id)["status"] == "DENIED"
+    assert row(conn, "tickets", "ticket_id", tid)["security_flag"] == 0
+    assert conn.execute("SELECT last_restart_at FROM services WHERE host = 'app01'").fetchone()[0] is None
 
 
 # Deny ---------------------------------------------------------------------------
@@ -295,3 +311,132 @@ def test_create_approval_directly_validates_approver_exists(conn):
     # a ghost approver is not eligible, so the fallback is used
     created = create_approval(conn, d.action_id, tid, "arjun.m", "ghost.user")
     assert created is not None and created.approver_id == "sam.t"
+
+
+# Policy recheck at approval ---------------------------------------------------------------------
+
+DOCKER = {"device_id": "LT1042", "package": "docker_desktop"}
+
+
+def request_docker(conn):
+    """priya.s asks for docker_desktop (needs_approval): policy REQUIRE_APPROVAL by sam.t."""
+    tid = create_ticket(conn, "priya.s", "Docker", "Please install docker_desktop on LT1042.")
+    d = handle(conn, tid, "priya.s", "install_software", DOCKER)
+    assert d.status == "pending_approval" and d.approver_id == "sam.t"
+    return tid, d
+
+
+def installed(conn, package="docker_desktop"):
+    return conn.execute("SELECT COUNT(*) FROM installs WHERE package = ?", (package,)).fetchone()[0]
+
+
+def test_approving_a_package_that_became_denied_does_not_run_it(conn):
+    tid, d = request_docker(conn)
+    with conn:
+        conn.execute("UPDATE software_catalogue SET status = 'denied' WHERE package = 'docker_desktop'")
+    approval_id = approval_for(conn, tid)["approval_id"]
+
+    r = approve(conn, approval_id, "sam.t")
+
+    assert (r.ok, r.status) == (False, "policy_changed")
+    assert installed(conn) == 0                                            # nothing ran
+    act = row(conn, "actions", "action_id", d.action_id)
+    assert (act["status"], act["decided_by"]) == ("DENIED", "policy_changed")
+    ap = row(conn, "approvals", "approval_id", approval_id)
+    assert (ap["status"], ap["comment"]) == ("DENIED", "policy_changed")
+    ticket = row(conn, "tickets", "ticket_id", tid)
+    assert (ticket["status"], ticket["security_flag"]) == ("ESCALATED", 0)  # not a security event
+    assert ticket["resolution_note"].startswith("This request was approved, but policy no longer allows it (")
+    assert "denied" in ticket["resolution_note"].lower()
+    types = event_types(conn)
+    assert "approval_policy_recheck_blocked" in types
+    assert "action_executed" not in types and "action_blocked" not in types and "security_flag_set" not in types
+    payload = json.loads(conn.execute(
+        "SELECT payload_json FROM audit_log WHERE event_type = 'approval_policy_recheck_blocked'").fetchone()[0])
+    assert payload["rule_id"] == "P031" and payload["action_id"] == d.action_id
+
+
+def test_a_rechecked_denial_cannot_be_approved_again(conn):
+    tid, d = request_docker(conn)
+    with conn:
+        conn.execute("UPDATE software_catalogue SET status = 'denied' WHERE package = 'docker_desktop'")
+    approval_id = approval_for(conn, tid)["approval_id"]
+    approve(conn, approval_id, "sam.t")
+    with conn:
+        conn.execute("UPDATE software_catalogue SET status = 'approved' WHERE package = 'docker_desktop'")
+    again = approve(conn, approval_id, "sam.t")
+    assert again.ok is False and again.status == "not_pending" and installed(conn) == 0
+
+
+def test_the_normal_path_still_runs_exactly_once(conn):
+    tid, d = request_docker(conn)
+    approval_id = approval_for(conn, tid)["approval_id"]
+    first = approve(conn, approval_id, "sam.t")
+    second = approve(conn, approval_id, "sam.t")
+    assert (first.ok, first.status) == (True, "executed")
+    assert (second.ok, second.status) == (False, "not_pending")
+    assert installed(conn) == 1
+    assert row(conn, "actions", "action_id", d.action_id)["status"] == "APPROVED_EXECUTED"
+    assert row(conn, "tickets", "ticket_id", tid)["status"] == "RESOLVED"
+    assert "approval_policy_recheck_blocked" not in event_types(conn)
+
+
+def test_a_call_that_still_needs_approval_at_recheck_runs(conn):
+    """REQUIRE_APPROVAL at recheck is not a block: the human already decided."""
+    tid, d = request_docker(conn)
+    # still needs_approval (unchanged): the recheck says REQUIRE_APPROVAL, and the approved call runs
+    assert approve(conn, approval_for(conn, tid)["approval_id"], "sam.t").status == "executed"
+
+
+def test_a_call_that_became_plain_allow_runs(conn):
+    tid, d = request_docker(conn)
+    with conn:
+        conn.execute("UPDATE software_catalogue SET status = 'approved' WHERE package = 'docker_desktop'")
+    assert approve(conn, approval_for(conn, tid)["approval_id"], "sam.t").status == "executed"
+    assert installed(conn) == 1
+
+
+def test_a_group_that_became_privileged_is_not_granted(conn):
+    tid, d = request_finance_access(conn)
+    with conn:
+        conn.execute("UPDATE groups SET privileged = 1 WHERE group_name = 'FinanceReports'")
+    r = approve(conn, approval_for(conn, tid)["approval_id"], "anita.d")
+    assert r.status == "policy_changed" and not is_member(conn)
+    assert row(conn, "tickets", "ticket_id", tid)["security_flag"] == 0
+
+
+def test_a_target_that_no_longer_exists_is_not_acted_on(conn):
+    tid = create_ticket(conn, "neha.i", "Reset Rahul", "Rahul is locked out.")
+    handle(conn, tid, "neha.i", "reset_password", {"user_id": "rahul.k"})
+    with conn:
+        conn.execute("UPDATE actions SET args_json = ? WHERE ticket_id = ?",
+                     (json.dumps({"user_id": "nobody.x"}), tid))
+    r = approve(conn, approval_for(conn, tid)["approval_id"], "sam.t")
+    assert r.status == "policy_changed"
+    assert conn.execute("SELECT COUNT(*) FROM outbox").fetchone()[0] == 0
+
+
+def test_unreadable_stored_args_fail_closed(conn):
+    tid, d = request_docker(conn)
+    with conn:
+        conn.execute("UPDATE actions SET args_json = 'not json' WHERE action_id = ?", (d.action_id,))
+    r = approve(conn, approval_for(conn, tid)["approval_id"], "sam.t")
+    assert r.status == "policy_changed" and installed(conn) == 0
+
+
+def test_the_stored_action_does_not_count_against_the_write_limit_at_approval(conn):
+    """A ticket whose third write is the pending one must still be approvable (P003 counts pending actions)."""
+    tid = create_ticket(conn, "priya.s", "Several things", "Docker and two installs.")
+    handle(conn, tid, "priya.s", "install_software", {"device_id": "LT1042", "package": "vscode"})
+    handle(conn, tid, "priya.s", "install_software", {"device_id": "LT1042", "package": "git"})
+    d = handle(conn, tid, "priya.s", "install_software", DOCKER)  # third write, pending approval
+    assert d.status == "pending_approval"
+    r = approve(conn, approval_for(conn, tid)["approval_id"], "sam.t")
+    assert (r.ok, r.status) == (True, "executed") and installed(conn) == 1
+
+
+def test_the_recheck_never_calls_the_judge(conn, fake_judge):
+    tid, d = request_docker(conn)
+    calls_before = len(fake_judge.calls)
+    approve(conn, approval_for(conn, tid)["approval_id"], "sam.t")
+    assert len(fake_judge.calls) == calls_before

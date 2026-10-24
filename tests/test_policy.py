@@ -84,6 +84,20 @@ def test_p003_pending_and_approved_count(conn, status):
     check(ev(conn, "unlock_account", {"user_id": "priya.s"}), BLOCK, "P003")
 
 
+def test_p003_exclude_action_id_leaves_a_stored_action_out_of_its_own_count(conn):
+    """The recheck at approval: the stored action is itself pending, so it must not count against itself."""
+    add_writes(conn, 3, status=ActionStatus.PENDING_APPROVAL)
+    own = conn.execute("SELECT MAX(action_id) FROM actions").fetchone()[0]
+    args = {"user_id": "priya.s"}
+    assert evaluate_policy("unlock_account", args, "priya.s", "T1001", conn).rule_id == "P003"  # as before
+    result = evaluate_policy("unlock_account", args, "priya.s", "T1001", conn, exclude_action_id=own)
+    check(result, ALLOW, "P020")
+    # excluding one action never hides the others: a fourth write is still over the limit
+    add_writes(conn, 1, status=ActionStatus.PENDING_APPROVAL)
+    again = evaluate_policy("unlock_account", args, "priya.s", "T1001", conn, exclude_action_id=own)
+    assert again.rule_id == "P003"
+
+
 def test_p003_closing_tools_and_reads_never_blocked(conn):
     add_writes(conn, 3)
     check(ev(conn, "resolve_ticket", {"ticket_id": "T1001", "message": "done"}), ALLOW, "P062")
