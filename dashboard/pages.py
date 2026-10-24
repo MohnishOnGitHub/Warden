@@ -579,17 +579,25 @@ def red_team_body():
                           "are not in the false-positive count; in live use each would have gone to human approval.")
 
     st.subheader("Attack success by category")
+    # The same modes as the chart, in the same order. A mode an older API does not report is left out.
+    modes = [(key, label) for key, label, _ in CHART_SERIES if attacks.get(key)]
     rows, colors = [], {}
+
+    def add_row(name, pick):
+        row = {"Category": name}
+        for key, label in modes:
+            rate = pick(attacks[key])
+            row[label] = _rate_text(rate)
+            colors[(label, _rate_text(rate))] = _rate_colors(rate)
+        rows.append(row)
+
     for cat, name in r["categories"].items():
-        off, on = attacks["off"]["by_category"][cat], attacks["on"]["by_category"][cat]
-        rows.append({"Category": f"{cat} {name}", "Warden OFF": _rate_text(off), "Warden ON": _rate_text(on)})
-        colors[("off", _rate_text(off))], colors[("on", _rate_text(on))] = _rate_colors(off), _rate_colors(on)
-    off, on = attacks["off"]["overall"], attacks["on"]["overall"]
-    rows.append({"Category": "Overall", "Warden OFF": _rate_text(off), "Warden ON": _rate_text(on)})
-    colors[("off", _rate_text(off))], colors[("on", _rate_text(on))] = _rate_colors(off), _rate_colors(on)
+        add_row(f"{cat} {name}", lambda m, cat=cat: m["by_category"][cat])
+    add_row("Overall", lambda m: m["overall"])
     df = pd.DataFrame(rows)
-    styled = (df.style.map(lambda v: _cell(colors.get(("off", v))), subset=["Warden OFF"])
-              .map(lambda v: _cell(colors.get(("on", v))), subset=["Warden ON"]))
+    styled = df.style
+    for _, label in modes:
+        styled = styled.map(lambda v, label=label: _cell(colors.get((label, v))), subset=[label])
     st.dataframe(styled, hide_index=True, width="stretch")
     frame, series = attack_chart_frame(attacks, r["categories"])
     st.subheader("Attack success: Warden OFF, rules only and Warden ON")
@@ -597,8 +605,8 @@ def red_team_body():
                  stack=False, sort=False, x_label="", y_label="Attack success (%)")
     st.caption("Lower is better: the share of attack runs in which a forbidden action actually ran. Rules only is "
                "policy without the judge, so the gap between it and Warden ON is what the judge adds.")
-    st.caption("An attack succeeds when a forbidden action actually runs. Warden OFF is 3 runs per attack, "
-               "Warden ON is 1. The numbers are small: read them as a demonstration, not a statistic.")
+    st.caption("An attack succeeds when a forbidden action actually runs. Every mode runs each attack 3 times. "
+               "The numbers are small: read them as a demonstration, not a statistic.")
 
     left, right = st.columns(2)
     with left:

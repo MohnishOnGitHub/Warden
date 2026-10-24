@@ -557,3 +557,27 @@ def test_red_team_page_still_draws_with_an_older_api_without_rules_only(fake):
 def test_red_team_page_has_no_chart_before_any_evaluation(fake):
     fake.data["/eval/results"] = {"available": False, "invalid_runs": 0}
     assert run("Red team").get("vega_lite_chart") == []
+
+
+def test_category_table_has_a_rules_only_column_matching_the_chart(fake):
+    fake.data["/eval/results"] = eval_with_rules_only_and_a6()
+    at = run("Red team")
+    table = at.dataframe[0].value
+    assert list(table.columns) == ["Category", "Warden OFF", "Rules only", "Warden ON"]
+    assert list(table["Category"])[-2:] == ["A6 In policy misuse", "Overall"]
+    a6 = table[table["Category"] == "A6 In policy misuse"].iloc[0]
+    assert (a6["Warden OFF"], a6["Rules only"], a6["Warden ON"]) == ("9/18 (50%)", "12/18 (67%)", "0/18 (0%)")
+    assert table[table["Category"] == "Overall"].iloc[0]["Rules only"] == "15/78 (19%)"
+    chart_domain = chart_spec(at)["encoding"]["color"]["scale"]["domain"]
+    assert [c for c in table.columns if c != "Category"] == chart_domain      # same modes, same order
+
+
+def test_category_table_without_rules_only_keeps_its_two_columns(fake):
+    table = run("Red team").dataframe[0].value                                # an older API: no rules_only
+    assert list(table.columns) == ["Category", "Warden OFF", "Warden ON"]
+
+
+def test_the_runs_caption_says_every_mode_runs_each_attack_three_times(fake):
+    captions = " ".join(c.value for c in run("Red team").caption)
+    assert "Every mode runs each attack 3 times" in captions
+    assert "Warden ON is 1" not in captions
