@@ -33,6 +33,8 @@ ticket ──> ingestion ──> agent loop (max 8 steps) ──proposed tool ca
 | `config/policy.yaml`, `config/settings.yaml` | Policy rules and settings. |
 | `data/seed_directory.json`, `data/seed_tickets.json` | Simulated users and groups, and the fixed evaluation cases. |
 
+A ticket is only resolved when the work is really done: before `resolve_ticket` runs, Warden checks the executed actions against the simulated directory (account unlocked, package installed, group row present, and so on) and rejects a closing message that claims a change nothing made. If the check fails, the ticket is escalated to a human with a note. That is not a block and not a security event. Information-only answers resolve normally.
+
 Invariants that hold everywhere: nothing runs without a verdict; ticket text is untrusted and never a policy input; requester identity comes from the `users` table; any error inside Warden fails closed to `BLOCK`; an unavailable judge means `REQUIRE_APPROVAL`; the most restrictive verdict wins; temporary passwords are never returned, logged or displayed; `audit_log` is append only. See [CLAUDE.md](CLAUDE.md) for the full design.
 
 ## Setup (Windows, PowerShell)

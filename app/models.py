@@ -15,6 +15,7 @@ class ActionStatus(StrEnum):
     DENIED = "DENIED"                      # human said no
     EXPIRED = "EXPIRED"                    # approval timed out
     FAILED = "FAILED"                      # the tool raised while running
+    DOWNGRADED = "DOWNGRADED"              # resolve_ticket replaced by escalate_to_human: completion check failed
 
 
 @dataclass(frozen=True)

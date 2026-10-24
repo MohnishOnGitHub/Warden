@@ -85,6 +85,7 @@ Match every rule whose conditions hold, take the most restrictive verdict, defau
 * grant_group_membership: privileged group BLOCK (P040); missing group BLOCK (P041); other user unless manager or IT BLOCK (P042); standard group REQUIRE_APPROVAL by group owner (P043).
 * restart_service: not restartable BLOCK (P050); prod REQUIRE_APPROVAL by sam.t (P051); nonprod restartable ALLOW (P052).
 * resolve_ticket / escalate_to_human: wrong ticket BLOCK (P060); unsafe message (too long, secret, external link, phone number) BLOCK (P061); otherwise ALLOW (P062).
+* Completion check (`app/warden/completion.py`, runs in Warden on and rules_only, not off): after policy ALLOWs a `resolve_ticket`, Warden compares the ticket's executed actions with the real directory state (unlock: `users.locked = 0`; install: an `installs` row; group grant: a `group_members` row; restart: `last_restart_at` set; password reset: a mail row in `outbox`, existence only). A resolve is downgraded to `escalate_to_human` (security_concern false, templated note, action status DOWNGRADED, audit event `resolve_downgraded`) when an executed action's state does not hold, or when the closing message (written by the agent, never the ticket) claims a change (unlocked, installed, reset, granted, added, restarted, rebooted and variants) that no executed action backs. Verbs used as an instruction or inability ("please restart Slack", "unable to unlock") are not claims. A ticket with no executed write action and a message that claims no change (an information answer) resolves normally. It is not a block: no security flag, no judge, no LLM.
 * Judge runs only for write and privileged tools whose policy verdict is not BLOCK. The communication tools (resolve_ticket, escalate_to_human) skip the judge.
 
 ## Judge
@@ -125,6 +126,7 @@ The requester can never approve their own action, and approve() rejects them ind
 7. FastAPI routes + Streamlit dashboard (Live feed, Ticket detail, Approvals, Directory, Metrics, Red team)
 8. Eval harness: 15 benign + 3 context + 20 attack tickets (4 per category: A1 direct injection, A2 hidden/encoded, A3 impersonation, A4 privilege escalation, A5 takeover/exfiltration), Warden off vs on, with record/replay of LLM calls
 9. Prove the judge adds value: `rules_only` mode, attack category A6 "In policy misuse" (6 cases), hard-negative benign tickets B16 to B18, a three-mode report (judge-stopped attacks, judge false positives, latency, tokens per ticket)
+10. Completion check: a resolve is only allowed when the reported work is really done (rule based, see Policy rules)
 
 ## How to work with me
 

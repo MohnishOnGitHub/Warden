@@ -16,6 +16,7 @@ from app.audit import log_event
 from app.models import ActionStatus, Decision
 from app.tools import execute_tool, redact
 from app.warden.combiner import combine
+from app.warden.completion import check_completion, downgrade_note
 from app.warden.judge import JudgeInvalid, JudgeUnavailable, judge_action
 from app.warden.policy import ALLOW, BLOCK, REQUIRE_APPROVAL, evaluate_policy
 
@@ -84,6 +85,24 @@ def _run_tool(conn, ticket_id, action_id, tool_name, args, obligations, started)
     log_event(conn, "action_executed", "warden", ticket_id,
               {"action_id": action_id, "tool": tool_name, "result": result})
     return Decision("executed", tool_name, action_id, result=result, verdict=ALLOW)
+
+
+def _downgrade_resolve(conn, ticket_id, action_id, policy, problems, started):
+    """The completion check failed: escalate instead of resolving. Not a block and not a security event."""
+    args = {"ticket_id": ticket_id, "summary": downgrade_note(problems), "security_concern": False}
+    try:
+        result = execute_tool(conn, "escalate_to_human", args)
+    except Exception as e:
+        _set_action(conn, action_id, status=ActionStatus.FAILED.value, latency_ms=_elapsed_ms(started))
+        log_event(conn, "action_failed", "warden", ticket_id,
+                  {"action_id": action_id, "tool": "escalate_to_human", "error": type(e).__name__})
+        return Decision("blocked", "resolve_ticket", action_id, reason=FAILED_REASON)
+    _set_action(conn, action_id, status=ActionStatus.DOWNGRADED.value, decided_by="completion_check",
+                latency_ms=_elapsed_ms(started))
+    log_event(conn, "resolve_downgraded", "warden", ticket_id, {"action_id": action_id, "problems": problems})
+    # The agent is told it went through: its loop ends the same way as after a resolve.
+    return Decision("executed", "resolve_ticket", action_id, result=result, verdict=ALLOW,
+                    rule_id=policy.rule_id, decided_by="completion_check")
 
 
 def _run_judge(conn, ticket_id, action_id, tool_name, args, policy):
@@ -180,6 +199,10 @@ def _handle(conn, ticket_id, requester_id, tool_name, raw_args, started):
         return Decision("pending_approval", tool_name, **{**internal, "approver_id": created.approver_id})
 
     if final.verdict == ALLOW:
+        if tool_name == "resolve_ticket":
+            problems = check_completion(conn, ticket_id, args.get("message"))
+            if problems:
+                return _downgrade_resolve(conn, ticket_id, action_id, policy, problems, started)
         decision = _run_tool(conn, ticket_id, action_id, tool_name, args, policy.obligations, started)
         return replace(decision, rule_id=policy.rule_id, verdict=final.verdict,
                        decided_by=final.decided_by, judge=judge_info)
