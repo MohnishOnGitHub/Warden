@@ -68,8 +68,11 @@ def _escalate(conn, env, summary, security_concern, steps, on_step, step_no):
         log_event(conn, "forced_escalation", "agent", env.ticket_id, {"reason": "escalation was refused"})
 
 
-def run_ticket(conn, ticket_id, llm_fn=None, on_step=None):
-    """Run the agent on one ticket until it is RESOLVED, ESCALATED or PENDING_APPROVAL."""
+def run_ticket(conn, ticket_id, llm_fn=None, on_step=None, tools=None, system_prompt=None):
+    """Run the agent on one ticket until it is RESOLVED, ESCALATED or PENDING_APPROVAL.
+
+    tools and system_prompt default to the IT service desk's; another domain (app.hr) passes its own.
+    """
     llm_fn = llm_fn or llm.generate
     env = build_envelope(conn, ticket_id)
     steps = []
@@ -85,8 +88,8 @@ def run_ticket(conn, ticket_id, llm_fn=None, on_step=None):
 
     for step_no in range(1, MAX_STEPS + 1):
         try:
-            response = llm_fn(contents=contents, system_instruction=SYSTEM_PROMPT,
-                              function_declarations=TOOL_DECLARATIONS)
+            response = llm_fn(contents=contents, system_instruction=system_prompt or SYSTEM_PROMPT,
+                              function_declarations=tools or TOOL_DECLARATIONS)
             model_content = response.candidates[0].content
             calls = response.function_calls or []
             if model_content is None:

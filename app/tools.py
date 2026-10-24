@@ -220,7 +220,24 @@ def _declaration(name, spec):
     }
 
 
-TOOL_DECLARATIONS = [_declaration(name, spec) for name, spec in TOOLS.items()]
+TOOL_DECLARATIONS = [_declaration(name, spec) for name, spec in TOOLS.items()]  # the IT agent's tools: fixed at import
+
+
+def register_tools(new_tools):
+    """Add another domain's tools (for example app.hr) to the registry that Warden and approvals execute from.
+
+    Explicit, never on import. Tool names are global, so a process should run one domain at a time.
+    TOOL_DECLARATIONS (what the IT agent is offered) is not changed.
+    """
+    clash = set(new_tools) & set(TOOLS)
+    if clash:
+        raise ValueError(f"Tools already registered: {sorted(clash)}")
+    TOOLS.update(new_tools)
+
+
+def unregister_tools(names):
+    for name in names:
+        TOOLS.pop(name, None)
 
 
 def execute_tool(conn, name, raw_args, **obligations):

@@ -1,0 +1,58 @@
+# Warden policy for the HR onboarding domain. Same engine and format as config/policy.yaml.
+# Used only for the four HR tools (create_account, assign_laptop, grant_app_access, schedule_orientation).
+# The shared closing tools (resolve_ticket, escalate_to_human) keep using the IT rules P060 to P062.
+# Policy never sees ticket text: the requester comes from the users table, the hiring manager from hr_candidates.
+
+limits:
+  max_writes_per_ticket: 6
+  max_message_length: 500
+  secret_patterns:
+    - '(?i)password\s*(is|:|=)'
+    - '(?i)(token|secret|api[_-]?key)\s*(is|:|=)'
+  link_patterns:
+    - '(?i)https?://'
+    - '(?i)\bwww\.'
+
+default:
+  id: P999
+  verdict: BLOCK
+  reason: No policy rule matched this action.
+
+rules:
+  - id: H001
+    tools: [create_account, assign_laptop, grant_app_access, schedule_orientation]
+    when: [hr_candidate_missing]
+    verdict: BLOCK
+    reason: Unknown candidate.
+  - id: H002
+    tools: [create_account, assign_laptop, grant_app_access, schedule_orientation]
+    when: [hr_not_hiring_manager]
+    verdict: BLOCK
+    reason: Only the candidate's hiring manager can request onboarding steps.
+  - id: H003
+    tools: [assign_laptop]
+    when: [hr_asset_unavailable]
+    verdict: BLOCK
+    reason: The laptop does not exist or is not available.
+  - id: H004
+    tools: [grant_app_access]
+    when: [hr_app_restricted]
+    verdict: BLOCK
+    reason: This application cannot be granted through onboarding.
+  - id: H005
+    tools: [assign_laptop]
+    when: [hr_asset_high_spec]
+    verdict: REQUIRE_APPROVAL
+    approver: sam.t
+    reason: High-spec laptops need IT admin approval.
+  - id: H006
+    tools: [grant_app_access]
+    when: [hr_app_sensitive]
+    verdict: REQUIRE_APPROVAL
+    approver: sam.t
+    reason: Sensitive applications need IT admin approval.
+  - id: H007
+    tools: [create_account, assign_laptop, grant_app_access, schedule_orientation]
+    when: [not hr_candidate_missing, not hr_not_hiring_manager]
+    verdict: ALLOW
+    reason: Onboarding step requested by the candidate's hiring manager.

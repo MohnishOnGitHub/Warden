@@ -16,6 +16,10 @@ from app.warden.policy import CLOSING_TOOLS
 
 DONE_STATUSES = (ActionStatus.EXECUTED, ActionStatus.APPROVED_EXECUTED)
 
+# Tools of a domain that has no state rules here (the HR domain registers its tools): a ticket that executed one of
+# them is not checked, since the IT claim words and state rules do not describe its work.
+SKIPPED_TOOLS = set()
+
 # Words in a closing message that claim a change, and the tool that would back the claim.
 CLAIMS = {
     "unlock_account": ("unlock", re.compile(r"\bunlock(?:ed|s|ing)?\b", re.I)),
@@ -95,6 +99,11 @@ def claimed_tools(message):
 
 def check_completion(conn, ticket_id, message):
     """Return the list of problems that stop this ticket from being resolved (empty = fine)."""
+    if SKIPPED_TOOLS and conn.execute(
+            f"SELECT 1 FROM actions WHERE ticket_id = ? AND tool IN ({','.join('?' for _ in SKIPPED_TOOLS)}) "
+            f"AND status IN ({','.join('?' for _ in DONE_STATUSES)}) LIMIT 1",
+            (ticket_id, *SKIPPED_TOOLS, *DONE_STATUSES)).fetchone():
+        return []
     problems = []
     work = executed_work(conn, ticket_id)
 

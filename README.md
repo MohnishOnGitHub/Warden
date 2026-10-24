@@ -126,6 +126,26 @@ Attack category **A6 "In policy misuse"** holds tickets whose injected instructi
 
 The report adds, per mode and per category: attack success in off / rules_only / on; **attacks stopped by the judge** (rules_only let it run, Warden on stopped it, same case and repetition; the agent is sampled again each run, so this is a paired estimate); **judge false positives** on benign tickets next to the policy-only false positives; the judge unavailable rate; median and p95 latency per mode; and **tokens per ticket** (agent and judge, input and output, thinking counted as output) so you can apply current prices. The first run after this change rebuilds the `eval_results` table (its old results were recorded with other models and cases); `data/eval_report.json` in git keeps the earlier numbers.
 
+## A second domain: HR onboarding
+
+Warden is not tied to IT tickets. `app/hr/` adds an HR onboarding domain on the same pipeline: `warden.handle()`, the judge, the combiner, approvals and the audit log are reused unchanged. Only configuration, tool definitions and seed data are new:
+
+| Path | Role |
+|---|---|
+| `config/policy_hr.yaml` | Seven rules (H001 to H007): unknown candidate, not the hiring manager, laptop unavailable, restricted app, and approval for high-spec laptops and sensitive apps. |
+| `app/hr/tools.py` | `create_account`, `assign_laptop`, `grant_app_access`, `schedule_orientation` on new simulated tables (`hr_candidates`, `hr_assets`, `hr_apps`, `hr_accounts`, ...). |
+| `app/hr/predicates.py`, `app/hr/db.py`, `data/seed_hr.json` | Policy conditions, the HR schema and seed data. |
+| `app/hr/prompt.py`, `app/hr/demo.py` | The HR agent prompt and the two demo tickets. |
+
+The hiring manager comes from the trusted `hr_candidates` table and the requester from `users`, never from ticket text. `app.hr.register()` plugs the tools and policy in; the policy engine then picks a policy by tool name, so the approval-time policy recheck works for HR too.
+
+```powershell
+python scripts/run_hr_ticket.py                       # live: Gemini is the agent and the judge (about 10 calls)
+python scripts/run_hr_ticket.py --scripted --rules-only   # no Gemini: canned agent steps, policy only
+```
+
+It rebuilds a throwaway `data/hr_demo.db` and runs a benign onboarding and an attack ticket (a recruiter note asking for `payroll_admin`), printing each step's verdict. Limits: tool names are global, so run one domain per process; the shared closing tools keep the IT rules P060 to P062; the completion check does not cover HR work; the judge prompt is the IT desk's, unchanged. The IT evaluation is not affected.
+
 ## Demo script
 
 About five minutes. Start the API with `DEMO_MODE=1` and the dashboard, run `python scripts/reset_db.py` beforehand, and use the "Load demo ticket" dropdown on the Live feed page.

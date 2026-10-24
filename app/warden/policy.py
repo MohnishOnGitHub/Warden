@@ -347,6 +347,22 @@ def load_policy(path=POLICY_PATH):
 
 POLICY = load_policy()  # loaded at import: a bad file stops the app at startup
 
+# Tools that belong to another domain use that domain's policy (see app/hr). Every other tool uses POLICY.
+_TOOL_POLICIES = {}
+
+
+def register_policy(tool_names, policy):
+    _TOOL_POLICIES.update({name: policy for name in tool_names})
+
+
+def unregister_policy(tool_names):
+    for name in tool_names:
+        _TOOL_POLICIES.pop(name, None)
+
+
+def policy_for(tool_name):
+    return _TOOL_POLICIES.get(tool_name, POLICY) if isinstance(tool_name, str) else POLICY
+
 
 # Evaluation -----------------------------------------------------------------
 
@@ -386,7 +402,7 @@ def evaluate_policy(tool_name, args, requester_id, ticket_id, conn, policy=None,
 
     exclude_action_id: an already stored action to leave out of the per-ticket write count (the recheck at approval).
     """
-    policy = policy or POLICY
+    policy = policy or policy_for(tool_name)
     try:
         facts = Facts(conn, tool_name, args, requester_id, ticket_id, policy.limits, exclude_action_id)
         facts.requester  # an unknown requester fails closed, even for rules that never look at them

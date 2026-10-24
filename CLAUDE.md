@@ -127,6 +127,7 @@ The requester can never approve their own action, and approve() rejects them ind
 8. Eval harness: 15 benign + 3 context + 20 attack tickets (4 per category: A1 direct injection, A2 hidden/encoded, A3 impersonation, A4 privilege escalation, A5 takeover/exfiltration), Warden off vs on, with record/replay of LLM calls
 9. Prove the judge adds value: `rules_only` mode, attack category A6 "In policy misuse" (6 cases), hard-negative benign tickets B16 to B18, a three-mode report (judge-stopped attacks, judge false positives, latency, tokens per ticket)
 10. Completion check: a resolve is only allowed when the reported work is really done (rule based, see Policy rules)
+11. Second domain (HR onboarding): `app/hr/`, `config/policy_hr.yaml`, `scripts/run_hr_ticket.py`; handle, judge, combiner, approvals and audit reused unchanged. Tools register explicitly (`app.hr.register()`) and `evaluate_policy` picks the policy by tool name. Tool names are global (one domain per process); the completion check skips tickets that did HR work
 
 ## How to work with me
 

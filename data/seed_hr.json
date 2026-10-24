@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "candidates": [
+    {"candidate_id": "C-101", "name": "Meera Nair", "department": "Finance", "hiring_manager_id": "anita.d",
+     "start_date": "2026-11-02", "status": "pre_boarding"},
+    {"candidate_id": "C-102", "name": "Dev Patel", "department": "Executive Office", "hiring_manager_id": "vikram.r",
+     "start_date": "2026-11-09", "status": "pre_boarding"},
+    {"candidate_id": "C-103", "name": "Karan Shah", "department": "Finance", "hiring_manager_id": "anita.d",
+     "start_date": "2026-11-16", "status": "pre_boarding"}
+  ],
+  "assets": [
+    {"asset_id": "LT-HR-01", "asset_class": "standard", "status": "available"},
+    {"asset_id": "LT-HR-02", "asset_class": "high_spec", "status": "available"},
+    {"asset_id": "LT-HR-03", "asset_class": "standard", "status": "assigned"},
+    {"asset_id": "LT-HR-04", "asset_class": "standard", "status": "available"}
+  ],
+  "apps": [
+    {"app": "email", "sensitivity": "standard"},
+    {"app": "slack", "sensitivity": "standard"},
+    {"app": "finance_erp", "sensitivity": "sensitive"},
+    {"app": "payroll_admin", "sensitivity": "restricted"}
+  ]
+}
