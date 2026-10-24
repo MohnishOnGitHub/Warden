@@ -452,3 +452,108 @@ def test_red_team_page_judge_rate_with_no_judge_calls(fake):
     fake.data["/eval/results"] = data
     tiles = {m.label: m.value for m in run("Red team").metric}
     assert tiles["Judge unavailable rate"] == "n/a" and tiles["Forbidden actions Warden stopped (Warden ON)"] == "0 of 0"
+
+
+# Sidebar indicator and the grouped attack chart ------------------------------------------------------
+
+def sidebar_text(at):
+    return "\n".join(m.value for m in at.sidebar.markdown)
+
+
+def test_sidebar_indicator_says_on_when_warden_is_on(fake):
+    shown = sidebar_text(run())
+    assert "WARDEN ON" in shown and "WARDEN OFF" not in shown and "#d7f0d7" in shown
+
+
+def test_sidebar_indicator_says_off_in_red_when_warden_is_off(fake):
+    fake.data["/health"] = {**HEALTH, "warden_mode": "off"}
+    shown = sidebar_text(run())
+    assert "WARDEN OFF" in shown and "#c01f1f" in shown and "WARDEN ON" not in shown
+
+
+def test_sidebar_indicator_for_the_rules_only_evaluation_mode(fake):
+    fake.data["/health"] = {**HEALTH, "warden_mode": "rules_only"}
+    shown = sidebar_text(run())
+    assert "WARDEN RULES ONLY" in shown and "WARDEN ON" not in shown and "WARDEN OFF" not in shown
+
+
+def test_sidebar_indicator_when_the_api_is_down(fake):
+    fake.data["/health"] = api_client.ApiError("down")
+    shown = sidebar_text(run())
+    assert "WARDEN UNKNOWN" in shown and "WARDEN ON" not in shown
+
+
+def test_the_indicator_is_constant_markup_with_no_data_in_it():
+    from dashboard.pages import INDICATOR_STYLE, warden_indicator_html
+    for state in INDICATOR_STYLE:
+        html = warden_indicator_html(state)
+        assert html.count("<div") == 1 and "<script" not in html and INDICATOR_STYLE[state][0] in html
+
+
+def eval_with_rules_only_and_a6():
+    data = copy.deepcopy(EVAL)
+    data["categories"]["A6"] = "In policy misuse"
+    data["attacks"]["off"]["by_category"]["A6"] = _rate(9, 18)
+    data["attacks"]["on"]["by_category"]["A6"] = _rate(0, 18)
+    data["attacks"]["rules_only"] = {
+        "overall": _rate(15, 78), "agent_refused": _rate(10, 78),
+        "by_category": {"A1": _rate(1, 12), "A2": _rate(0, 12), "A3": _rate(2, 12), "A4": _rate(0, 12),
+                        "A5": _rate(0, 12), "A6": _rate(12, 18)}}
+    return data
+
+
+def test_chart_frame_puts_overall_first_and_a6_last_with_all_three_modes():
+    from dashboard.pages import attack_chart_frame
+    data = eval_with_rules_only_and_a6()
+    frame, series = attack_chart_frame(data["attacks"], data["categories"])
+    assert list(frame["Category"]) == ["Overall", "A1 Direct injection", "A2 Hidden / encoded", "A3 Impersonation",
+                                       "A4 Privilege escalation", "A5 Takeover / exfiltration", "A6 In policy misuse"]
+    assert [label for label, _ in series] == ["Warden OFF", "Rules only", "Warden ON"]
+    assert list(frame.columns) == ["Category", "Warden OFF", "Rules only", "Warden ON"]
+    last = frame.iloc[-1]
+    assert (last["Warden OFF"], last["Rules only"], last["Warden ON"]) == (50.0, round(100 * 12 / 18, 1), 0.0)
+    assert frame.iloc[0]["Rules only"] == round(100 * 15 / 78, 1)   # Overall
+
+
+def test_chart_frame_leaves_out_a_mode_the_api_does_not_report():
+    from dashboard.pages import attack_chart_frame
+    frame, series = attack_chart_frame(EVAL["attacks"], EVAL["categories"])   # an older API: no rules_only
+    assert [label for label, _ in series] == ["Warden OFF", "Warden ON"] and "Rules only" not in frame.columns
+
+
+def test_chart_frame_shows_a_category_without_runs_as_a_gap_not_a_zero():
+    from dashboard.pages import attack_chart_frame
+    data = copy.deepcopy(EVAL)
+    data["attacks"]["off"]["by_category"]["A5"] = _rate(0, 0)
+    frame, _ = attack_chart_frame(data["attacks"], data["categories"])
+    assert frame[frame["Category"].str.startswith("A5")]["Warden OFF"].isna().all()
+
+
+def chart_spec(at):
+    import json
+    charts = at.get("vega_lite_chart")
+    assert len(charts) == 1
+    return json.loads(charts[0].proto.spec)
+
+
+def test_red_team_page_draws_one_grouped_bar_chart(fake):
+    fake.data["/eval/results"] = eval_with_rules_only_and_a6()
+    at = run("Red team")
+    enc = chart_spec(at)["encoding"]
+    assert enc["xOffset"]["field"] == "color -- streamlit-generated"   # bars side by side, not stacked
+    assert enc["y"]["stack"] is False and enc["x"]["sort"] is None      # data order: Overall first, A6 last
+    assert enc["color"]["scale"]["domain"] == ["Warden OFF", "Rules only", "Warden ON"]
+    assert enc["color"]["scale"]["range"] == ["#d03b3b", "#fab219", "#0ca30c"]
+    assert enc["y"]["title"] == "Attack success (%)"
+    assert any("what the judge adds" in c.value for c in at.caption)
+    assert list(at.dataframe[0].value["Category"])[-1] == "Overall"      # the category table is still there
+
+
+def test_red_team_page_still_draws_with_an_older_api_without_rules_only(fake):
+    enc = chart_spec(run("Red team"))["encoding"]
+    assert enc["color"]["scale"]["domain"] == ["Warden OFF", "Warden ON"]
+
+
+def test_red_team_page_has_no_chart_before_any_evaluation(fake):
+    fake.data["/eval/results"] = {"available": False, "invalid_runs": 0}
+    assert run("Red team").get("vega_lite_chart") == []

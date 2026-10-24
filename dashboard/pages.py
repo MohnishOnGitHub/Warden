@@ -95,6 +95,28 @@ BANNER_HTML = (
 )
 
 
+# The sidebar indicator: constant markup per state, no data in it.
+INDICATOR_STYLE = {
+    "on": ("WARDEN ON", "#0b5a0b", "#d7f0d7"),
+    "off": ("WARDEN OFF", "#ffffff", "#c01f1f"),
+    "rules_only": ("WARDEN RULES ONLY", "#6b4a00", "#fdeec4"),   # evaluation mode: policy without the judge
+    "unknown": ("WARDEN UNKNOWN", "#444444", "#e6e6e6"),
+}
+
+
+def warden_state(health):
+    """'on', 'off', 'rules_only' or 'unknown' (API not reachable)."""
+    if health is None:
+        return "unknown"
+    return health["warden_mode"] if health["warden_mode"] in ("on", "off", "rules_only") else "unknown"
+
+
+def warden_indicator_html(state):
+    text, fg, bg = INDICATOR_STYLE[state]
+    return (f'<div style="background:{bg};color:{fg};text-align:center;font-weight:800;font-size:1.25rem;'
+            f'letter-spacing:0.04em;padding:0.6rem 0.5rem;border-radius:0.4rem;margin-bottom:0.5rem;">{text}</div>')
+
+
 @st.fragment(run_every=REFRESH_SECONDS)
 def warden_banner():
     """Full width red banner at the top of every page while Warden is off."""
@@ -500,6 +522,28 @@ def _rate_colors(r):
     return ("#fdeec4", "#6b4a00") if r["rate"] < 0.5 else ("#f7d4d4", "#8a1f1f")
 
 
+# Grouped bar chart series: attack success for each mode. Red is the unprotected baseline, amber is policy
+# without the judge, green is the full Warden. The legend names them, so colour is never the only cue.
+CHART_SERIES = (("off", "Warden OFF", "#d03b3b"), ("rules_only", "Rules only", "#fab219"),
+                ("on", "Warden ON", "#0ca30c"))
+
+
+def attack_chart_frame(attacks, categories):
+    """Attack success rate (%) per mode: Overall first, then the categories in order (A6 last), so the gap between
+    rules only and Warden ON is easy to point at. Returns (DataFrame, [(column, colour)]). A mode the API does
+    not report (an older API has no rules_only) is left out; a category with no runs is a gap, not a zero."""
+    series = [(label, color, key) for key, label, color in CHART_SERIES if attacks.get(key)]
+
+    def pct(rate):
+        return None if not rate or not rate["runs"] else round(100 * rate["succeeded"] / rate["runs"], 1)
+
+    rows = [{"Category": "Overall", **{label: pct(attacks[key]["overall"]) for label, _, key in series}}]
+    for cat, name in categories.items():
+        rows.append({"Category": f"{cat} {name}",
+                     **{label: pct(attacks[key]["by_category"].get(cat)) for label, _, key in series}})
+    return pd.DataFrame(rows), [(label, color) for label, color, _ in series]
+
+
 def _ms(stats):
     return "n/a" if stats["median_ms"] is None else f"{stats['median_ms']:.0f} / {stats['p95_ms']:.0f} ms (n={stats['count']})"
 
@@ -547,6 +591,12 @@ def red_team_body():
     styled = (df.style.map(lambda v: _cell(colors.get(("off", v))), subset=["Warden OFF"])
               .map(lambda v: _cell(colors.get(("on", v))), subset=["Warden ON"]))
     st.dataframe(styled, hide_index=True, width="stretch")
+    frame, series = attack_chart_frame(attacks, r["categories"])
+    st.subheader("Attack success: Warden OFF, rules only and Warden ON")
+    st.bar_chart(frame, x="Category", y=[label for label, _ in series], color=[color for _, color in series],
+                 stack=False, sort=False, x_label="", y_label="Attack success (%)")
+    st.caption("Lower is better: the share of attack runs in which a forbidden action actually ran. Rules only is "
+               "policy without the judge, so the gap between it and Warden ON is what the judge adds.")
     st.caption("An attack succeeds when a forbidden action actually runs. Warden OFF is 3 runs per attack, "
                "Warden ON is 1. The numbers are small: read them as a demonstration, not a statistic.")
 

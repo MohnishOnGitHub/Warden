@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import streamlit as st
 
 from dashboard import api_client
-from dashboard.pages import PAGES, health_status, warden_banner
+from dashboard.pages import PAGES, health_status, warden_banner, warden_indicator_html, warden_state
 
 st.set_page_config(page_title="Warden", layout="wide")
 
@@ -41,6 +41,7 @@ def sidebar():
         health = None
     demo = bool(health and health["demo_mode"])
     on = bool(health) and health["warden_mode"] == "on"
+    st.sidebar.markdown(warden_indicator_html(warden_state(health)), unsafe_allow_html=True)
     st.session_state["warden_toggle"] = on
     label = "Warden protection: UNKNOWN" if health is None else f"Warden protection: {'ON' if on else 'OFF'}"
     st.sidebar.toggle(label, key="warden_toggle", on_change=set_warden_mode, disabled=not demo,
