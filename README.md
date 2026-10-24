@@ -136,3 +136,7 @@ About five minutes. Start the API with `DEMO_MODE=1` and the dashboard, run `pyt
 
 - `.env` is git-ignored. Never commit it, and never print or log keys.
 - Everything runs against a simulated directory; the `outbox` table holds simulated email with secrets and is never displayed.
+
+
+END
+
